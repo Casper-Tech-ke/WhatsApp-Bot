@@ -18,7 +18,7 @@ Build your own feature-rich WhatsApp bot in minutes — no experience required.
 </div>
 
 
-<img src="https://i.ibb.co/zhC2ThDj/upload-1778354956516-aa356e54-jpg.jpg" alt="WOLFTECH Banner" width="100%"/>
+<img src="https://i.ibb.co/N6fVpZtL/upload-1778355377958-34f272b3-jpg.jpg" alt="WOLFTECH Banner" width="100%"/>
 ---
 
 ## 🌍 What Is 🐺 WOLFTECH — WhatsApp Bot Framework?
