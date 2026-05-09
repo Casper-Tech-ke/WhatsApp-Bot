@@ -1,5 +1,6 @@
 // ============================================================
 //  WOLFTECH — OPEN SOURCE EDITION
+//  🐺 WOLFTECH — WhatsApp Bot Framework
 // ============================================================
 
 const originalConsoleMethods = {
