@@ -19,9 +19,9 @@ Build your own feature-rich WhatsApp bot in minutes — no experience required.
 
 ---
 
-## 🌍 What Is WOLFTECH?
+## 🌍 What Is 🐺 WOLFTECH — WhatsApp Bot Framework?
 
-**WOLFTECH** is a free, open-source WhatsApp bot framework built on top of [Baileys](https://github.com/WhiskeySockets/Baileys) — the most popular unofficial WhatsApp Web API library for Node.js. It gives developers a clean, well-structured starting point to build their own WhatsApp bots without dealing with the complexity of raw WebSocket connections, session management, or message parsing.
+**🐺 WOLFTECH — WhatsApp Bot Framework** is a free, open-source WhatsApp bot framework built on top of [Baileys](https://github.com/WhiskeySockets/Baileys) — the most popular unofficial WhatsApp Web API library for Node.js. It gives developers a clean, well-structured starting point to build their own WhatsApp bots without dealing with the complexity of raw WebSocket connections, session management, or message parsing.
 
 Whether you want to build a **group management bot**, a **customer support bot**, an **automation tool**, or just learn how WhatsApp bots work under the hood — WOLFTECH gives you the foundation.
 
