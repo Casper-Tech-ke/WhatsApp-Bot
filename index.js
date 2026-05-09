@@ -88,7 +88,7 @@ const __dirname = dirname(__filename);
 
 const SESSION_DIR = './session';
 const BOT_NAME = process.env.BOT_NAME || 'WOLFTECH';
-const VERSION = '1.1.3';
+const VERSION = '1.0.0';
 const DEFAULT_PREFIX = process.env.PREFIX || '.';
 const OWNER_FILE = './owner.json';
 const PREFIX_CONFIG_FILE = './prefix_config.json';
