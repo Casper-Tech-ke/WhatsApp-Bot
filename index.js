@@ -1078,6 +1078,7 @@ class HotReloadSystem {
 
     async reloadCommands() {
         try {
+            const startTime = Date.now(); // FIXED: Added this line
             const oldCommandCount = this.commandsMap.size;
             const oldCategories = new Map(this.commandCategoriesMap);
             this.commandsMap.clear();
