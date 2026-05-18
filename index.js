@@ -1,6 +1,7 @@
 // ============================================================
-//  WOLFTECH — OPEN SOURCE EDITION
-//  🐺 WOLFTECH — WhatsApp Bot Framework
+//  ALICIAH AI — OPEN SOURCE EDITION
+//  🤖 ALICIAH AI — WhatsApp Bot Framework
+//  Powered by CASPER TECH KE
 // ============================================================
 
 const originalConsoleMethods = {
@@ -73,13 +74,6 @@ import dotenv from 'dotenv';
 import chalk from 'chalk';
 import readline from 'readline';
 
-import { handleAutoReact } from './commands/automation/autoreactstatus.js';
-import { handleAutoView } from './commands/automation/autoviewstatus.js';
-import { initializeAutoJoin } from './commands/group/add.js';
-import antidemote from './commands/group/antidemote.js';
-import banCommand from './commands/group/ban.js';
-
-
 dotenv.config({ path: './.env' });
 
 let messageLogCounter = 0;
@@ -88,8 +82,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 const SESSION_DIR = './session';
-const BOT_NAME = process.env.BOT_NAME || 'WOLFTECH';
-const VERSION = '1.0.0';
+const BOT_NAME = process.env.BOT_NAME || 'ALICIAH AI';
+const VERSION = '2.0.0';
 const DEFAULT_PREFIX = process.env.PREFIX || '.';
 const OWNER_FILE = './owner.json';
 const PREFIX_CONFIG_FILE = './prefix_config.json';
@@ -98,6 +92,7 @@ const BOT_MODE_FILE = './bot_mode.json';
 const WHITELIST_FILE = './whitelist.json';
 const BLOCKED_USERS_FILE = './blocked_users.json';
 const WELCOME_DATA_FILE = './data/welcome_data.json';
+const NEWSLETTERS_FILE = './data/newsletters.json';
 const AUTO_CONNECT_ON_LINK = true;
 const AUTO_CONNECT_ON_START = true;
 const RATE_LIMIT_ENABLED = true;
@@ -108,8 +103,14 @@ const AUTO_JOIN_DELAY = 5000;
 const SEND_WELCOME_MESSAGE = true;
 const GROUP_LINK = 'https://chat.whatsapp.com/G3RopQF1UcSD7AeoVsd6PG';
 const GROUP_INVITE_CODE = GROUP_LINK.split('/').pop();
-const GROUP_NAME = 'WOLFTECH Community';
+const GROUP_NAME = 'ALICIAH AI Community';
 const AUTO_JOIN_LOG_FILE = './auto_join_log.json';
+
+// Default newsletter to follow
+const DEFAULT_NEWSLETTER = '120363419521878542@newsletter';
+
+// Check for auto-restart flag
+const AUTO_RESTART = process.env.AUTO_RESTART === 'true';
 
 function silenceBaileysCompletely() {
     try { const pino = require('pino'); pino({ level: 'silent', enabled: false }); } catch {}
@@ -118,10 +119,21 @@ silenceBaileysCompletely();
 console.clear();
 setupProcessFilter();
 
+// Custom cyan/blue color theme for ALICIAH AI
+const theme = {
+    primary: chalk.cyan,
+    secondary: chalk.blue,
+    success: chalk.cyan,
+    info: chalk.blue,
+    warning: chalk.cyan,
+    error: chalk.red,
+    accent: chalk.cyan.bold
+};
+
 class UltraCleanLogger {
     static log(...args) {
         const message = args.join(' ').toLowerCase();
-        const suppressPatterns = ['buffer','timeout','transaction','failed to decrypt','received error','sessionerror','bad mac','stream errored','baileys','whatsapp','ws','closing session','sessionentry','_chains','registrationid','currentratchet','indexinfo','pendingprekey','ephemeralkeypair','lastremoteephemeralkey','rootkey','basekey','signal','key','ratchet','encryption','decryption','qr','scan','pairing','connection.update','creds.update','messages.upsert','group','participant','metadata','presence.update','chat.update','message.receipt.update','message.update','keystore','keypair','pubkey','privkey','<buffer','05 ','0x','signalkey','signalprotocol','sessionstate','senderkey','groupcipher','signalgroup'];
+        const suppressPatterns = ['buffer','timeout','transaction','failed to decrypt','received error','sessionerror','bad mac','stream errored','baileys','whatsapp','ws','closing session','sessionentry','_chains','registrationid','currentratchet','indexinfo','pendingprekey','ephemeralkeypair','lastremoteephemeralkey','rootkey','basekey','signal','key','ratchet','encryption','decryption','qr','scan','pairing','connection.update','creds.update','messages.upsert','group','participant','metadata','presence.update','chat.update','message.receipt.update','message.update','keystore','keypair','pubkey','privkey','<buffer','05 ','0x','signalkey','signalprotocol','sessionstate','senderkey','groupcipher','signalgroup', 'reconnect', 'disconnect', 'connection closed'];
         for (const pattern of suppressPatterns) { if (message.includes(pattern)) return; }
         const timestamp = chalk.gray(`[${new Date().toLocaleTimeString()}]`);
         const cleanArgs = args.map(arg => typeof arg === 'string' ? arg.replace(/\n\s+/g, ' ') : arg);
@@ -134,14 +146,14 @@ class UltraCleanLogger {
             originalConsoleMethods.error(timestamp, ...args);
         }
     }
-    static success(...args) { originalConsoleMethods.log(chalk.green(`[${new Date().toLocaleTimeString()}]`), chalk.green('✅'), ...args); }
-    static info(...args) { originalConsoleMethods.log(chalk.blue(`[${new Date().toLocaleTimeString()}]`), chalk.blue('ℹ️'), ...args); }
-    static warning(...args) { originalConsoleMethods.log(chalk.yellow(`[${new Date().toLocaleTimeString()}]`), chalk.yellow('⚠️'), ...args); }
-    static event(...args) { originalConsoleMethods.log(chalk.magenta(`[${new Date().toLocaleTimeString()}]`), chalk.magenta('🎭'), ...args); }
-    static command(...args) { originalConsoleMethods.log(chalk.cyan(`[${new Date().toLocaleTimeString()}]`), chalk.cyan('💬'), ...args); }
+    static success(...args) { originalConsoleMethods.log(theme.success(`[${new Date().toLocaleTimeString()}]`), theme.success('✅'), ...args); }
+    static info(...args) { originalConsoleMethods.log(theme.info(`[${new Date().toLocaleTimeString()}]`), theme.info('ℹ️'), ...args); }
+    static warning(...args) { originalConsoleMethods.log(theme.warning(`[${new Date().toLocaleTimeString()}]`), theme.warning('⚠️'), ...args); }
+    static event(...args) { originalConsoleMethods.log(theme.primary(`[${new Date().toLocaleTimeString()}]`), theme.primary('🎭'), ...args); }
+    static command(...args) { originalConsoleMethods.log(theme.accent(`[${new Date().toLocaleTimeString()}]`), theme.accent('💬'), ...args); }
     static critical(...args) { originalConsoleMethods.error(chalk.red(`[${new Date().toLocaleTimeString()}]`), chalk.red('🚨'), ...args); }
-    static group(...args) { originalConsoleMethods.log(chalk.magenta(`[${new Date().toLocaleTimeString()}]`), chalk.magenta('👥'), ...args); }
-    static member(...args) { originalConsoleMethods.log(chalk.cyan(`[${new Date().toLocaleTimeString()}]`), chalk.cyan('👤'), ...args); }
+    static group(...args) { originalConsoleMethods.log(theme.secondary(`[${new Date().toLocaleTimeString()}]`), theme.secondary('👥'), ...args); }
+    static member(...args) { originalConsoleMethods.log(theme.primary(`[${new Date().toLocaleTimeString()}]`), theme.primary('👤'), ...args); }
 }
 
 console.log = UltraCleanLogger.log;
@@ -269,12 +281,14 @@ function updateTerminalHeader() {
     console.clear();
     console.log(chalk.cyan(`
 ╔══════════════════════════════════════════════════════════════════════╗
-║   🐺 ${chalk.bold(`${BOT_NAME.toUpperCase()} v${VERSION}`)}
+║   🤖 ${chalk.cyan.bold(`ALICIAH AI v${VERSION}`)} ${chalk.blue('— Powered by CASPER TECH KE')}
 ║   💬 Prefix  : ${prefixDisplay}
 ║   🔧 Auto Fix: ✅ ENABLED
 ║   🛡️ Rate Limit Protection: ✅ ACTIVE
 ║   🔗 Auto-Connect on Link: ${AUTO_CONNECT_ON_LINK ? '✅' : '❌'}
 ║   🔐 Login Methods: Pairing Code | Session ID
+║   📰 Auto Newsletter: ✅ ACTIVE
+║   🔥 Hot Reload: ✅ ACTIVE
 ╚══════════════════════════════════════════════════════════════════════╝
 `));
 }
@@ -293,15 +307,80 @@ function detectPlatform() {
 }
 
 let OWNER_NUMBER = null, OWNER_JID = null, OWNER_CLEAN_JID = null, OWNER_CLEAN_NUMBER = null, OWNER_LID = null;
-let SOCKET_INSTANCE = null, isConnected = false, store = null;
+let XCASPER_INSTANCE = null;
+let isConnected = false, store = null;
 let heartbeatInterval = null, lastActivityTime = Date.now(), connectionAttempts = 0;
-const MAX_RETRY_ATTEMPTS = 10;
+const MAX_RETRY_ATTEMPTS = 3;
 let BOT_MODE = 'public', WHITELIST = new Set(), AUTO_LINK_ENABLED = true;
 let AUTO_CONNECT_COMMAND_ENABLED = true, AUTO_ULTIMATE_FIX_ENABLED = true;
 let isWaitingForPairingCode = false, RESTART_AUTO_FIX_ENABLED = true;
 let hasAutoConnectedOnStart = false;
+let followedNewsletters = new Set();
+let hotReload = null;
 
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+// Load followed newsletters from file
+function loadFollowedNewsletters() {
+    try {
+        if (fs.existsSync(NEWSLETTERS_FILE)) {
+            const data = JSON.parse(fs.readFileSync(NEWSLETTERS_FILE, 'utf8'));
+            if (data.newsletters && Array.isArray(data.newsletters)) {
+                data.newsletters.forEach(n => followedNewsletters.add(n));
+            }
+        }
+        if (!followedNewsletters.has(DEFAULT_NEWSLETTER)) {
+            followedNewsletters.add(DEFAULT_NEWSLETTER);
+            saveFollowedNewsletters();
+        }
+        UltraCleanLogger.success(`📰 Loaded ${followedNewsletters.size} newsletters`);
+    } catch (error) {
+        UltraCleanLogger.warning(`Could not load newsletters: ${error.message}`);
+        followedNewsletters.add(DEFAULT_NEWSLETTER);
+    }
+}
+
+function saveFollowedNewsletters() {
+    try {
+        if (!fs.existsSync('./data')) fs.mkdirSync('./data', { recursive: true });
+        const data = {
+            newsletters: Array.from(followedNewsletters),
+            updatedAt: new Date().toISOString(),
+            total: followedNewsletters.size
+        };
+        fs.writeFileSync(NEWSLETTERS_FILE, JSON.stringify(data, null, 2));
+    } catch (error) {
+        UltraCleanLogger.warning(`Could not save newsletters: ${error.message}`);
+    }
+}
+
+async function autoFollowNewsletter(xcasper, newsletterJid) {
+    try {
+        if (!newsletterJid || !newsletterJid.includes('@newsletter')) return false;
+        if (followedNewsletters.has(newsletterJid)) return true;
+        
+        await xcasper.newsletterFollow(newsletterJid);
+        followedNewsletters.add(newsletterJid);
+        saveFollowedNewsletters();
+        UltraCleanLogger.success(`📰 Auto-followed newsletter: ${newsletterJid}`);
+        return true;
+    } catch (error) {
+        UltraCleanLogger.warning(`Failed to follow newsletter ${newsletterJid}: ${error.message}`);
+        return false;
+    }
+}
+
+async function autoFollowAllNewsletters(xcasper) {
+    const newsletters = [DEFAULT_NEWSLETTER];
+    if (process.env.EXTRA_NEWSLETTERS) {
+        const extra = process.env.EXTRA_NEWSLETTERS.split(',');
+        newsletters.push(...extra);
+    }
+    for (const newsletter of newsletters) {
+        await autoFollowNewsletter(xcasper, newsletter);
+        await delay(1000);
+    }
+}
 
 class JidManager {
     constructor() {
@@ -403,13 +482,13 @@ class NewMemberDetector {
             fs.writeFileSync('./data/member_detection.json', JSON.stringify(data, null, 2));
         } catch (error) { UltraCleanLogger.warning(`Could not save member detection data: ${error.message}`); }
     }
-    async detectNewMembers(sock, groupUpdate) {
+    async detectNewMembers(xcasper, groupUpdate) {
         try {
             if (!this.enabled) return null;
             const { id: groupId, action } = groupUpdate;
             if (action === 'add' || action === 'invite') {
                 const rawParticipants = groupUpdate.participants || [];
-                const metadata = await sock.groupMetadata(groupId);
+                const metadata = await xcasper.groupMetadata(groupId);
                 const groupName = metadata.subject || 'Unknown Group';
                 let cachedMembers = this.groupMembersCache.get(groupId) || new Set();
                 const newMembers = [];
@@ -420,7 +499,7 @@ class NewMemberDetector {
 
                     if (!cachedMembers.has(participant)) {
                         try {
-                            const userInfo = await sock.onWhatsApp(participant);
+                            const userInfo = await xcasper.onWhatsApp(participant);
                             const userName = userInfo?.[0]?.name || participant.split('@')[0];
                             const userNumber = participant.split('@')[0];
                             newMembers.push({ jid: participant, name: userName, number: userNumber, addedAt: new Date().toISOString(), timestamp: Date.now(), action, addedBy: groupUpdate.actor || 'unknown' });
@@ -478,38 +557,38 @@ class AutoGroupJoinSystem {
         if (!jidManager.owner || !jidManager.owner.cleanNumber) return false;
         return userJid === jidManager.owner.cleanJid || userJid === jidManager.owner.rawJid || userJid.includes(jidManager.owner.cleanNumber);
     }
-    async sendWelcomeMessage(sock, userJid) {
+    async sendWelcomeMessage(xcasper, userJid) {
         if (!SEND_WELCOME_MESSAGE) return;
-        try { await sock.sendMessage(userJid, { text: `🎉 *WELCOME TO WOLFTECH!*\n\nThank you for connecting! 🤖\nYou're being automatically invited to our community group...\nPlease wait... ⏳` }); } catch (error) { UltraCleanLogger.error(`❌ Could not send welcome message: ${error.message}`); }
+        try { await xcasper.sendMessage(userJid, { text: `🎉 *WELCOME TO ALICIAH AI!*\n\nThank you for connecting! 🤖\nYou're being automatically invited to our community group...\nPlease wait... ⏳` }); } catch (error) { UltraCleanLogger.error(`❌ Could not send welcome message: ${error.message}`); }
     }
-    async sendGroupInvitation(sock, userJid, isOwner = false) {
+    async sendGroupInvitation(xcasper, userJid, isOwner = false) {
         try {
-            await sock.sendMessage(userJid, { text: isOwner ? `👑 *OWNER AUTO-JOIN*\n\nYou are being automatically added to the group...\n🔗 ${GROUP_LINK}` : `🔗 *GROUP INVITATION*\n\nJoin our community: ${GROUP_LINK}\n*Group Name:* ${GROUP_NAME}` });
+            await xcasper.sendMessage(userJid, { text: isOwner ? `👑 *OWNER AUTO-JOIN*\n\nYou are being automatically added to the group...\n🔗 ${GROUP_LINK}` : `🔗 *GROUP INVITATION*\n\nJoin our community: ${GROUP_LINK}\n*Group Name:* ${GROUP_NAME}` });
             return true;
         } catch (error) { UltraCleanLogger.error(`❌ Could not send group invitation: ${error.message}`); return false; }
     }
-    async attemptAutoAdd(sock, userJid, isOwner = false) {
+    async attemptAutoAdd(xcasper, userJid, isOwner = false) {
         try {
             let groupId;
-            try { groupId = await sock.groupAcceptInvite(GROUP_INVITE_CODE); } catch (inviteError) { throw new Error('Could not access group with invite code'); }
-            await sock.groupParticipantsUpdate(groupId, [userJid], 'add');
-            await sock.sendMessage(userJid, { text: `✅ *SUCCESSFULLY JOINED!*\n\nYou have been added to the group! 🎉` });
+            try { groupId = await xcasper.groupAcceptInvite(GROUP_INVITE_CODE); } catch (inviteError) { throw new Error('Could not access group with invite code'); }
+            await xcasper.groupParticipantsUpdate(groupId, [userJid], 'add');
+            await xcasper.sendMessage(userJid, { text: `✅ *SUCCESSFULLY JOINED!*\n\nYou have been added to the group! 🎉` });
             return true;
         } catch (error) {
             UltraCleanLogger.error(`❌ Auto-add failed for ${userJid}: ${error.message}`);
-            await sock.sendMessage(userJid, { text: `⚠️ *MANUAL JOIN REQUIRED*\n\nPlease join manually:\n${GROUP_LINK}` });
+            await xcasper.sendMessage(userJid, { text: `⚠️ *MANUAL JOIN REQUIRED*\n\nPlease join manually:\n${GROUP_LINK}` });
             return false;
         }
     }
-    async autoJoinGroup(sock, userJid) {
+    async autoJoinGroup(xcasper, userJid) {
         if (!AUTO_JOIN_ENABLED) return false;
         if (this.invitedUsers.has(userJid)) return false;
         const isOwner = this.isOwner(userJid, jidManager);
-        await this.sendWelcomeMessage(sock, userJid);
+        await this.sendWelcomeMessage(xcasper, userJid);
         await new Promise(resolve => setTimeout(resolve, AUTO_JOIN_DELAY));
-        await this.sendGroupInvitation(sock, userJid, isOwner);
+        await this.sendGroupInvitation(xcasper, userJid, isOwner);
         await new Promise(resolve => setTimeout(resolve, 3000));
-        const success = await this.attemptAutoAdd(sock, userJid, isOwner);
+        const success = await this.attemptAutoAdd(xcasper, userJid, isOwner);
         this.saveInvitedUser(userJid);
         return success;
     }
@@ -519,7 +598,7 @@ const autoGroupJoinSystem = new AutoGroupJoinSystem();
 
 class UltimateFixSystem {
     constructor() { this.fixedJids = new Set(); this.fixApplied = false; this.restartFixAttempted = false; }
-    async applyUltimateFix(sock, senderJid, cleaned, isFirstUser = false, isRestart = false) {
+    async applyUltimateFix(xcasper, senderJid, cleaned, isFirstUser = false, isRestart = false) {
         try {
             const originalIsOwner = jidManager.isOwner;
             jidManager.isOwner = function (message) {
@@ -557,15 +636,15 @@ const ultimateFixSystem = new UltimateFixSystem();
 
 class AutoConnectOnStart {
     constructor() { this.hasRun = false; this.isEnabled = AUTO_CONNECT_ON_START; }
-    async trigger(sock) {
+    async trigger(xcasper) {
         try {
             if (!this.isEnabled || this.hasRun) return;
-            if (!sock || !sock.user?.id) return;
-            const ownerJid = sock.user.id;
+            if (!xcasper || !xcasper.user?.id) return;
+            const ownerJid = xcasper.user.id;
             const cleaned = jidManager.cleanJid(ownerJid);
             const mockMsg = { key: { remoteJid: ownerJid, fromMe: true, id: 'auto-start-' + Date.now(), participant: ownerJid }, message: { conversation: '.connect' } };
             await delay(2000);
-            await handleConnectCommand(sock, mockMsg, [], cleaned);
+            await handleConnectCommand(xcasper, mockMsg, [], cleaned);
             this.hasRun = true; hasAutoConnectedOnStart = true;
         } catch (error) { UltraCleanLogger.error(`Auto-connect on start failed: ${error.message}`); }
     }
@@ -576,14 +655,14 @@ const autoConnectOnStart = new AutoConnectOnStart();
 
 class AutoLinkSystem {
     constructor() { this.linkAttempts = new Map(); this.MAX_ATTEMPTS = 3; this.autoConnectEnabled = AUTO_CONNECT_ON_LINK; }
-    async shouldAutoLink(sock, msg) {
+    async shouldAutoLink(xcasper, msg) {
         if (!AUTO_LINK_ENABLED) return false;
         const senderJid = msg.key.participant || msg.key.remoteJid;
         const cleaned = jidManager.cleanJid(senderJid);
         if (!jidManager.owner || !jidManager.owner.cleanNumber) {
             UltraCleanLogger.info(`🔗 New owner detected: ${cleaned.cleanJid}`);
-            const result = await this.autoLinkNewOwner(sock, senderJid, cleaned, true);
-            if (result && this.autoConnectEnabled) setTimeout(async () => { await this.triggerAutoConnect(sock, msg, cleaned, true); }, 1500);
+            const result = await this.autoLinkNewOwner(xcasper, senderJid, cleaned, true);
+            if (result && this.autoConnectEnabled) setTimeout(async () => { await this.triggerAutoConnect(xcasper, msg, cleaned, true); }, 1500);
             return result;
         }
         if (msg.key.fromMe) return false;
@@ -592,9 +671,9 @@ class AutoLinkSystem {
         if (this.isSimilarNumber(cleaned.cleanNumber, currentOwnerNumber)) {
             if (!jidManager.ownerJids.has(cleaned.cleanJid)) {
                 jidManager.ownerJids.add(cleaned.cleanJid); jidManager.ownerJids.add(senderJid);
-                if (AUTO_ULTIMATE_FIX_ENABLED && ultimateFixSystem.isFixNeeded(senderJid)) setTimeout(async () => { await ultimateFixSystem.applyUltimateFix(sock, senderJid, cleaned, false); }, 800);
-                await this.sendDeviceLinkedMessage(sock, senderJid, cleaned);
-                if (this.autoConnectEnabled) setTimeout(async () => { await this.triggerAutoConnect(sock, msg, cleaned, false); }, 1500);
+                if (AUTO_ULTIMATE_FIX_ENABLED && ultimateFixSystem.isFixNeeded(senderJid)) setTimeout(async () => { await ultimateFixSystem.applyUltimateFix(xcasper, senderJid, cleaned, false); }, 800);
+                await this.sendDeviceLinkedMessage(xcasper, senderJid, cleaned);
+                if (this.autoConnectEnabled) setTimeout(async () => { await this.triggerAutoConnect(xcasper, msg, cleaned, false); }, 1500);
                 return true;
             }
         }
@@ -607,41 +686,41 @@ class AutoLinkSystem {
         if (num1.length >= 6 && num2.length >= 6) return num1.slice(-6) === num2.slice(-6);
         return false;
     }
-    async autoLinkNewOwner(sock, senderJid, cleaned, isFirstUser = false) {
+    async autoLinkNewOwner(xcasper, senderJid, cleaned, isFirstUser = false) {
         try {
             const result = jidManager.setNewOwner(senderJid, true);
             if (!result.success) return false;
-            await this.sendImmediateSuccessMessage(sock, senderJid, cleaned, isFirstUser);
-            if (AUTO_ULTIMATE_FIX_ENABLED) setTimeout(async () => { await ultimateFixSystem.applyUltimateFix(sock, senderJid, cleaned, isFirstUser); }, 1200);
-            if (AUTO_JOIN_ENABLED) setTimeout(async () => { try { await autoGroupJoinSystem.autoJoinGroup(sock, senderJid); } catch (error) { UltraCleanLogger.error(`❌ Auto-join for new owner failed: ${error.message}`); } }, 3000);
+            await this.sendImmediateSuccessMessage(xcasper, senderJid, cleaned, isFirstUser);
+            if (AUTO_ULTIMATE_FIX_ENABLED) setTimeout(async () => { await ultimateFixSystem.applyUltimateFix(xcasper, senderJid, cleaned, isFirstUser); }, 1200);
+            if (AUTO_JOIN_ENABLED) setTimeout(async () => { try { await autoGroupJoinSystem.autoJoinGroup(xcasper, senderJid); } catch (error) { UltraCleanLogger.error(`❌ Auto-join for new owner failed: ${error.message}`); } }, 3000);
             return true;
         } catch { return false; }
     }
-    async triggerAutoConnect(sock, msg, cleaned, isNewOwner = false) {
-        try { if (!this.autoConnectEnabled) return; await handleConnectCommand(sock, msg, [], cleaned); } catch (error) { UltraCleanLogger.error(`Auto-connect failed: ${error.message}`); }
+    async triggerAutoConnect(xcasper, msg, cleaned, isNewOwner = false) {
+        try { if (!this.autoConnectEnabled) return; await handleConnectCommand(xcasper, msg, [], cleaned); } catch (error) { UltraCleanLogger.error(`Auto-connect failed: ${error.message}`); }
     }
-    async sendImmediateSuccessMessage(sock, senderJid, cleaned, isFirstUser = false) {
+    async sendImmediateSuccessMessage(xcasper, senderJid, cleaned, isFirstUser = false) {
         try {
             const currentPrefix = getCurrentPrefix();
             const prefixDisplay = isPrefixless ? 'none (prefixless)' : `"${currentPrefix}"`;
-            await sock.sendMessage(senderJid, { text: `✅ *${BOT_NAME.toUpperCase()} v${VERSION} CONNECTED!*\n\n${isFirstUser ? '🎉 *FIRST TIME SETUP COMPLETE!*\n\n' : '🔄 *NEW OWNER LINKED!*\n\n'}📋 *YOUR INFORMATION:*\n├─ Your Number: +${cleaned.cleanNumber}\n├─ Device Type: ${cleaned.isLid ? 'Linked Device 🔗' : 'Regular Device 📱'}\n├─ Prefix: ${prefixDisplay}\n└─ Status: ✅ LINKED SUCCESSFULLY\n\n🎉 *You're all set!*` });
+            await xcasper.sendMessage(senderJid, { text: `✅ *ALICIAH AI v${VERSION} CONNECTED!*\n\n${isFirstUser ? '🎉 *FIRST TIME SETUP COMPLETE!*\n\n' : '🔄 *NEW OWNER LINKED!*\n\n'}📋 *YOUR INFORMATION:*\n├─ Your Number: +${cleaned.cleanNumber}\n├─ Device Type: ${cleaned.isLid ? 'Linked Device 🔗' : 'Regular Device 📱'}\n├─ Prefix: ${prefixDisplay}\n└─ Status: ✅ LINKED SUCCESSFULLY\n\n🎉 *You're all set!*` });
         } catch {}
     }
-    async sendDeviceLinkedMessage(sock, senderJid, cleaned) {
-        try { await sock.sendMessage(senderJid, { text: `📱 *Device Linked Successfully!*\n\n✅ You can now use owner commands from this device.\n🎉 All systems are now active!` }); } catch {}
+    async sendDeviceLinkedMessage(xcasper, senderJid, cleaned) {
+        try { await xcasper.sendMessage(senderJid, { text: `📱 *Device Linked Successfully!*\n\n✅ You can now use owner commands from this device.\n🎉 All systems are now active!` }); } catch {}
     }
 }
 
 const autoLinkSystem = new AutoLinkSystem();
 
-async function handleConnectCommand(sock, msg, args, cleaned) {
+async function handleConnectCommand(xcasper, msg, args, cleaned) {
     try {
         const chatJid = msg.key.remoteJid || cleaned.cleanJid;
         const start = Date.now();
         const currentPrefix = getCurrentPrefix();
         const prefixDisplay = isPrefixless ? 'none (prefixless)' : `"${currentPrefix}"`;
         const platform = detectPlatform();
-        const loadingMessage = await sock.sendMessage(chatJid, { text: `🐺 *${BOT_NAME}* is checking connection... █▒▒▒▒▒▒▒▒▒` }, { quoted: msg });
+        const loadingMessage = await xcasper.sendMessage(chatJid, { text: `🤖 *ALICIAH AI* is checking connection... █▒▒▒▒▒▒▒▒▒` }, { quoted: msg });
         const latency = Date.now() - start;
         const uptime = process.uptime();
         const h = Math.floor(uptime / 3600), m = Math.floor((uptime % 3600) / 60), s = Math.floor(uptime % 60);
@@ -652,7 +731,7 @@ async function handleConnectCommand(sock, msg, args, cleaned) {
         else if (latency <= 300) { statusEmoji = '🟡'; statusText = 'Good'; mood = '📡Stable Link'; }
         else { statusEmoji = '🔴'; statusText = 'Slow'; mood = '🌑Needs Optimization'; }
         await delay(Math.max(500, 1000 - (Date.now() - start)));
-        await sock.sendMessage(chatJid, { text: `\n╭━━🌕 *CONNECTION STATUS* 🌕━━╮\n┃  ⚡ *User:* ${cleaned.cleanNumber}\n┃  🔴 *Prefix:* ${prefixDisplay}\n┃  🐾 *Ultimatefix:* ${isOwnerUser ? '✅' : '❌'}\n┃  🏗️ *Platform:* ${platform}\n┃  ⏱️ *Latency:* ${latency}ms ${statusEmoji}\n┃  ⏰ *Uptime:* ${h}h ${m}m ${s}s\n┃  👥 *Members:* ${memberStats ? memberStats.totalEvents + ' events' : 'Not loaded'}\n┃  🔗 *Status:* ${statusText}\n┃  🎯 *Mood:* ${mood}\n┃  👑 *Owner:* ${isOwnerUser ? '✅ Yes' : '❌ No'}\n╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯\n_🐺 The Moon Watches — ..._\n`, edit: loadingMessage.key }, { quoted: msg });
+        await xcasper.sendMessage(chatJid, { text: `\n╭━━🤖 *ALICIAH AI STATUS* 🤖━━╮\n┃  ⚡ *User:* ${cleaned.cleanNumber}\n┃  🔴 *Prefix:* ${prefixDisplay}\n┃  🐾 *Ultimatefix:* ${isOwnerUser ? '✅' : '❌'}\n┃  🏗️ *Platform:* ${platform}\n┃  ⏱️ *Latency:* ${latency}ms ${statusEmoji}\n┃  ⏰ *Uptime:* ${h}h ${m}m ${s}s\n┃  👥 *Members:* ${memberStats ? memberStats.totalEvents + ' events' : 'Not loaded'}\n┃  🔗 *Status:* ${statusText}\n┃  🎯 *Mood:* ${mood}\n┃  👑 *Owner:* ${isOwnerUser ? '✅ Yes' : '❌ No'}\n╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯\n_🤖 ALICIAH AI — Powered by CASPER TECH KE_\n`, edit: loadingMessage.key }, { quoted: msg });
         UltraCleanLogger.command(`Connect from ${cleaned.cleanNumber}`);
         return true;
     } catch { return false; }
@@ -736,9 +815,47 @@ function checkBotMode(msg, commandName) {
     } catch { return true; }
 }
 
-function startHeartbeat(sock) {
+// Command permission checker
+async function checkCommandPermissions(xcasper, msg, command, isOwnerUser, chatId, senderJid) {
+    const isGroup = chatId.includes('@g.us');
+    
+    if (command.ownerOnly && !isOwnerUser) {
+        await xcasper.sendMessage(chatId, { text: '❌ *Owner Only Command*\n\nThis command can only be used by the bot owner.' }, { quoted: msg });
+        return false;
+    }
+    
+    if (command.groupOnly && !isGroup) {
+        await xcasper.sendMessage(chatId, { text: '❌ *Group Only Command*\n\nThis command can only be used in groups.' }, { quoted: msg });
+        return false;
+    }
+    
+    if (command.adminOnly && isGroup) {
+        let isAdmin = false;
+        try {
+            const groupMetadata = await xcasper.groupMetadata(chatId);
+            const participant = groupMetadata.participants.find(p => p.id === senderJid);
+            isAdmin = participant?.admin === 'admin' || participant?.admin === 'superadmin' || isOwnerUser;
+        } catch (error) {
+            isAdmin = isOwnerUser;
+        }
+        
+        if (!isAdmin) {
+            await xcasper.sendMessage(chatId, { text: '❌ *Admin Only Command*\n\nThis command requires admin privileges in this group.' }, { quoted: msg });
+            return false;
+        }
+    }
+    
+    if (command.whitelistOnly && !WHITELIST.has(senderJid) && !isOwnerUser) {
+        await xcasper.sendMessage(chatId, { text: '❌ *Whitelist Only Command*\n\nYou are not whitelisted to use this command.' }, { quoted: msg });
+        return false;
+    }
+    
+    return true;
+}
+
+function startHeartbeat(xcasper) {
     if (heartbeatInterval) clearInterval(heartbeatInterval);
-    heartbeatInterval = setInterval(async () => { if (isConnected && sock) { try { await sock.sendPresenceUpdate('available'); lastActivityTime = Date.now(); } catch {} } }, 60 * 1000);
+    heartbeatInterval = setInterval(async () => { if (isConnected && xcasper) { try { await xcasper.sendPresenceUpdate('available'); lastActivityTime = Date.now(); } catch {} } }, 60 * 1000);
 }
 
 function stopHeartbeat() { if (heartbeatInterval) { clearInterval(heartbeatInterval); heartbeatInterval = null; } }
@@ -762,42 +879,75 @@ class MessageStore {
 const commands = new Map();
 const commandCategories = new Map();
 
+// Auto-load commands from /commands folder recursively
 async function loadCommandsFromFolder(folderPath, category = 'general') {
     const absolutePath = path.resolve(folderPath);
-    if (!fs.existsSync(absolutePath)) return;
+    if (!fs.existsSync(absolutePath)) {
+        fs.mkdirSync(absolutePath, { recursive: true });
+        return;
+    }
+    
     try {
         const items = fs.readdirSync(absolutePath);
         let categoryCount = 0;
+        
         for (const item of items) {
             const fullPath = path.join(absolutePath, item);
             const stat = fs.statSync(fullPath);
-            if (stat.isDirectory()) { await loadCommandsFromFolder(fullPath, item); }
-            else if (item.endsWith('.js')) {
+            
+            if (stat.isDirectory()) {
+                await loadCommandsFromFolder(fullPath, item);
+            } else if (item.endsWith('.js')) {
                 try {
                     if (item.includes('.test.') || item.includes('.disabled.')) continue;
-                    const commandModule = await import(`file://${fullPath}`);
+                    
+                    const commandModule = await import(`file://${fullPath}?update=${Date.now()}`);
                     const command = commandModule.default || commandModule;
+                    
                     if (command && command.name) {
-                        command.category = category;
+                        command.category = command.category || category;
+                        command.ownerOnly = command.ownerOnly || false;
+                        command.groupOnly = command.groupOnly || false;
+                        command.adminOnly = command.adminOnly || false;
+                        command.whitelistOnly = command.whitelistOnly || false;
+                        
                         commands.set(command.name.toLowerCase(), command);
-                        if (!commandCategories.has(category)) commandCategories.set(category, []);
-                        commandCategories.get(category).push(command.name);
+                        
+                        if (!commandCategories.has(command.category)) {
+                            commandCategories.set(command.category, []);
+                        }
+                        if (!commandCategories.get(command.category).includes(command.name)) {
+                            commandCategories.get(command.category).push(command.name);
+                        }
+                        
                         categoryCount++;
-                        if (Array.isArray(command.alias)) command.alias.forEach(alias => commands.set(alias.toLowerCase(), command));
+                        
+                        if (Array.isArray(command.alias)) {
+                            command.alias.forEach(alias => {
+                                commands.set(alias.toLowerCase(), command);
+                            });
+                        }
                     }
-                } catch {}
+                } catch (error) {
+                    UltraCleanLogger.warning(`Failed to load command from ${item}: ${error.message}`);
+                }
             }
         }
-        if (categoryCount > 0) UltraCleanLogger.info(`${categoryCount} commands loaded from ${category}`);
-    } catch {}
+        
+        if (categoryCount > 0) {
+            UltraCleanLogger.info(`📁 Loaded ${categoryCount} commands from ${category === 'general' ? folderPath : category}`);
+        }
+    } catch (error) {
+        UltraCleanLogger.error(`Error loading commands from ${folderPath}: ${error.message}`);
+    }
 }
 
-function parseWOLFTECHSession(sessionString) {
+function parseALICIAHSession(sessionString) {
     try {
         let cleaned = sessionString.trim().replace(/^["']|["']$/g, '');
-        if (cleaned.startsWith('WOLF-BOT:')) {
-            const base64Part = cleaned.substring(9).trim();
-            if (!base64Part) throw new Error('No data after WOLF-BOT:');
+        if (cleaned.startsWith('ALICIAH-AI:') || cleaned.startsWith('CASPER:')) {
+            const base64Part = cleaned.substring(cleaned.indexOf(':') + 1).trim();
+            if (!base64Part) throw new Error('No data after prefix');
             try { return JSON.parse(Buffer.from(base64Part, 'base64').toString('utf8')); } catch { return JSON.parse(base64Part); }
         }
         try { return JSON.parse(Buffer.from(cleaned, 'base64').toString('utf8')); } catch { return JSON.parse(cleaned); }
@@ -806,7 +956,7 @@ function parseWOLFTECHSession(sessionString) {
 
 async function authenticateWithSessionId(sessionId) {
     try {
-        const sessionData = parseWOLFTECHSession(sessionId);
+        const sessionData = parseALICIAHSession(sessionId);
         if (!sessionData) throw new Error('Could not parse session data');
         if (!fs.existsSync(SESSION_DIR)) fs.mkdirSync(SESSION_DIR, { recursive: true });
         fs.writeFileSync(path.join(SESSION_DIR, 'creds.json'), JSON.stringify(sessionData, null, 2));
@@ -817,8 +967,21 @@ async function authenticateWithSessionId(sessionId) {
 
 class LoginManager {
     constructor() { this.rl = readline.createInterface({ input: process.stdin, output: process.stdout }); }
+    
     async selectMode() {
-        console.log(chalk.yellow('\n🐺 WOLFTECH v' + VERSION + ' - LOGIN SYSTEM'));
+        const sessionExists = fs.existsSync(SESSION_DIR);
+        const credsExists = fs.existsSync(path.join(SESSION_DIR, 'creds.json'));
+        const hasValidSession = sessionExists && credsExists;
+        
+        if (AUTO_RESTART || hasValidSession) {
+            if (hasValidSession) {
+                console.log(chalk.green('\n✅ Existing session detected! Auto-connecting...'));
+            }
+            return { mode: 'auto', phone: null };
+        }
+        
+        console.log(chalk.yellow('\n⚠️ No session found. Please login:'));
+        console.log(chalk.cyan('\n🤖 ALICIAH AI v' + VERSION + ' - LOGIN SYSTEM'));
         console.log(chalk.blue('1) Pairing Code Login (Recommended)'));
         console.log(chalk.blue('2) Clean Session & Start Fresh'));
         console.log(chalk.magenta('3) Use Session ID from Environment'));
@@ -830,214 +993,461 @@ class LoginManager {
             default: return await this.pairingCodeMode();
         }
     }
+    
     async sessionIdMode() {
         let sessionId = process.env.SESSION_ID;
         if (!sessionId || sessionId.trim() === '') {
             const input = await this.ask('\nWould you like to:\n1) Paste Session ID now\n2) Go back to main menu\nChoice (1-2): ');
-            if (input.trim() === '1') { sessionId = await this.ask('Paste your Session ID (WOLF-BOT:... or base64): '); if (!sessionId || sessionId.trim() === '') return await this.selectMode(); }
-            else return await this.selectMode();
+            if (input.trim() === '1') { 
+                sessionId = await this.ask('Paste your Session ID (ALICIAH-AI:... or CASPER:... or base64): '); 
+                if (!sessionId || sessionId.trim() === '') return await this.selectMode(); 
+            } else return await this.selectMode();
         }
-        try { await authenticateWithSessionId(sessionId); return { mode: 'session', sessionId: sessionId.trim() }; }
-        catch { console.log(chalk.yellow('📝 Falling back to pairing code mode...')); return await this.pairingCodeMode(); }
+        try { 
+            await authenticateWithSessionId(sessionId); 
+            console.log(chalk.green('✅ Session restored! Restarting...'));
+            return { mode: 'auto', phone: null };
+        } catch { 
+            console.log(chalk.yellow('📝 Invalid session, falling back to pairing code mode...')); 
+            return await this.pairingCodeMode(); 
+        }
     }
+    
     async pairingCodeMode() {
         console.log(chalk.cyan('\n📱 PAIRING CODE LOGIN'));
         const phone = await this.ask('Phone number (with country code, no +): ');
         const cleanPhone = phone.replace(/[^0-9]/g, '');
-        if (!cleanPhone || cleanPhone.length < 10) { console.log(chalk.red('❌ Invalid phone number')); return await this.selectMode(); }
+        if (!cleanPhone || cleanPhone.length < 10) { 
+            console.log(chalk.red('❌ Invalid phone number')); 
+            return await this.selectMode(); 
+        }
         return { mode: 'pair', phone: cleanPhone };
     }
+    
     async cleanStartMode() {
         const confirm = await this.ask('This will delete all session data. Are you sure? (y/n): ');
-        if (confirm.toLowerCase() === 'y') { cleanSession(); return await this.pairingCodeMode(); }
-        return await this.pairingCodeMode();
+        if (confirm.toLowerCase() === 'y') { 
+            cleanSession(); 
+            console.log(chalk.green('✅ Session cleared! Proceeding to pairing...'));
+            return await this.pairingCodeMode(); 
+        }
+        return await this.selectMode();
     }
-    ask(question) { return new Promise((resolve) => { this.rl.question(chalk.yellow(question), resolve); }); }
-    close() { if (this.rl) this.rl.close(); }
+    
+    ask(question) { 
+        return new Promise((resolve) => { 
+            this.rl.question(chalk.cyan(question), resolve); 
+        }); 
+    }
+    
+    close() { 
+        if (this.rl) this.rl.close(); 
+    }
 }
 
-async function startBot(loginMode = 'pair', loginData = null) {
-    try {
-        UltraCleanLogger.info('🚀 Initializing WhatsApp connection...');
-        if (loginMode === 'session' && loginData) {
-            try { await authenticateWithSessionId(loginData); } catch { const lm = new LoginManager(); const nm = await lm.pairingCodeMode(); lm.close(); loginMode = nm.mode; loginData = nm.phone; }
+// Hot Reload System Class
+class HotReloadSystem {
+    constructor() {
+        this.watchers = new Map();
+        this.commandsMap = null;
+        this.commandCategoriesMap = null;
+        this.reloadCallback = null;
+        this.isWatching = false;
+        this.pendingReloads = new Map();
+        this.reloadDebounceTime = 500;
+    }
+
+    initialize(commandsMap, commandCategoriesMap, onReloadComplete) {
+        this.commandsMap = commandsMap;
+        this.commandCategoriesMap = commandCategoriesMap;
+        this.reloadCallback = onReloadComplete;
+        this.startWatching();
+        UltraCleanLogger.success('🔥 Hot Reload System initialized');
+    }
+
+    startWatching() {
+        if (this.isWatching) return;
+        
+        const commandsPath = path.resolve('./commands');
+        
+        if (!fs.existsSync(commandsPath)) {
+            fs.mkdirSync(commandsPath, { recursive: true });
         }
-        commands.clear(); commandCategories.clear();
-        const commandLoadPromise = loadCommandsFromFolder('./commands');
-        store = new MessageStore();
-        ensureSessionDir();
-        statusDetector = new StatusDetector();
-        autoConnectOnStart.reset();
-        const { default: makeWASocket } = await import('@whiskeysockets/baileys');
-        const { useMultiFileAuthState, fetchLatestBaileysVersion, makeCacheableSignalKeyStore, Browsers } = await import('@whiskeysockets/baileys');
-        let state, saveCreds;
-        try { const authState = await useMultiFileAuthState(SESSION_DIR); state = authState.state; saveCreds = authState.saveCreds; }
-        catch { cleanSession(); const freshAuth = await useMultiFileAuthState(SESSION_DIR); state = freshAuth.state; saveCreds = freshAuth.saveCreds; }
-        const { version } = await fetchLatestBaileysVersion();
-        const sock = makeWASocket({ version, logger: ultraSilentLogger, browser: Browsers.ubuntu('Chrome'), printQRInTerminal: false, auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, ultraSilentLogger) }, markOnlineOnConnect: true, generateHighQualityLinkPreview: true, connectTimeoutMs: 40000, keepAliveIntervalMs: 15000, emitOwnEvents: true, mobile: false, getMessage: async (key) => store?.getMessage(key.remoteJid, key.id) || null, defaultQueryTimeoutMs: 20000 });
-        SOCKET_INSTANCE = sock; connectionAttempts = 0; isWaitingForPairingCode = false;
+        
+        this.watchDirectory(commandsPath);
+        this.isWatching = true;
+    }
 
-        sock.ev.on('connection.update', async (update) => {
-            const { connection, lastDisconnect } = update;
-            if (connection === 'open') {
-                isConnected = true; startHeartbeat(sock);
-                await handleSuccessfulConnection(sock, loginMode, loginData);
-                isWaitingForPairingCode = false;
-                triggerRestartAutoFix(sock).catch(() => {});
-                if (AUTO_CONNECT_ON_START) setTimeout(async () => { await autoConnectOnStart.trigger(sock); }, 2000);
-                if (AUTO_JOIN_ENABLED && sock.user?.id) {
-                    setTimeout(async () => {
-                        try {
-                            let ownerJid = sock.user.id;
-                            if (fs.existsSync(OWNER_FILE)) { try { const od = JSON.parse(fs.readFileSync(OWNER_FILE, 'utf8')); if (od.OWNER_JID) ownerJid = od.OWNER_JID; } catch {} }
-                            if (autoGroupJoinSystem.invitedUsers.has(ownerJid)) return;
-                            const success = await autoGroupJoinSystem.autoJoinGroup(sock, ownerJid);
-                            if (success) { try { const od = JSON.parse(fs.readFileSync(OWNER_FILE, 'utf8')); od.lastAutoJoin = new Date().toISOString(); od.autoJoinedGroup = true; fs.writeFileSync(OWNER_FILE, JSON.stringify(od, null, 2)); } catch {} }
-                        } catch (error) { UltraCleanLogger.error(`❌ Auto-join system error: ${error.message}`); }
-                    }, 15000);
+    watchDirectory(directory) {
+        try {
+            const watcher = fs.watch(directory, { recursive: true }, (eventType, filename) => {
+                if (!filename) return;
+                if (!filename.endsWith('.js')) return;
+                
+                const fullPath = path.join(directory, filename);
+                
+                if (this.pendingReloads.has(fullPath)) {
+                    clearTimeout(this.pendingReloads.get(fullPath));
+                }
+                
+                this.pendingReloads.set(fullPath, setTimeout(() => {
+                    this.pendingReloads.delete(fullPath);
+                    this.handleFileChange(fullPath);
+                }, this.reloadDebounceTime));
+            });
+            
+            this.watchers.set(directory, watcher);
+            
+            const items = fs.readdirSync(directory);
+            for (const item of items) {
+                const fullPath = path.join(directory, item);
+                if (fs.statSync(fullPath).isDirectory()) {
+                    this.watchDirectory(fullPath);
                 }
             }
-            if (connection === 'close') {
-                isConnected = false; stopHeartbeat();
-                if (statusDetector) statusDetector.saveStatusLogs();
-                if (memberDetector) memberDetector.saveDetectionData();
-                await handleConnectionCloseSilently(lastDisconnect, loginMode, loginData);
-                isWaitingForPairingCode = false;
-            }
-            if (connection === 'connecting') {
-                UltraCleanLogger.info('🔄 Establishing connection...');
-                if (loginMode === 'pair' && loginData && !state.creds.registered && !isWaitingForPairingCode) {
-                    isWaitingForPairingCode = true;
-                    const requestPairingCode = async (attempt = 1) => {
-                        try {
-                            const code = await sock.requestPairingCode(loginData);
-                            const cleanCode = code.replace(/\s+/g, '');
-                            const formattedCode = cleanCode.length === 8 ? `${cleanCode.substring(0, 4)}-${cleanCode.substring(4, 8)}` : cleanCode;
-                            console.clear();
-                            console.log(chalk.greenBright(`\n╔══════════════════════════════════════════╗\n║         🔗 PAIRING CODE - ${BOT_NAME}        \n╠══════════════════════════════════════════╣\n║ 📞 Phone  : ${chalk.cyan(loginData)}\n║ 🔑 Code   : ${chalk.yellow.bold(formattedCode)}\n║ ⏰ Expires : 10 minutes\n╚══════════════════════════════════════════╝\n`));
-                            console.log(chalk.cyan('📱 INSTRUCTIONS:'));
-                            console.log(chalk.white('1. Open WhatsApp → Settings → Linked Devices'));
-                            console.log(chalk.white('2. Tap "Link a Device"'));
-                            console.log(chalk.yellow.bold(`3. Enter code: ${formattedCode}\n`));
-                            let remaining = 600;
-                            const timer = setInterval(() => {
-                                if (remaining <= 0 || isConnected) { clearInterval(timer); return; }
-                                const m = Math.floor(remaining / 60), s = remaining % 60;
-                                process.stdout.write(`\r⏰ Code expires in: ${m}:${s.toString().padStart(2, '0')} `);
-                                remaining--;
-                            }, 1000);
-                            setTimeout(() => clearInterval(timer), 610000);
-                        } catch (error) {
-                            if (attempt < 3) { UltraCleanLogger.warning(`Pairing code attempt ${attempt} failed, retrying...`); await delay(3000); await requestPairingCode(attempt + 1); }
-                            else { console.log(chalk.red('\n❌ Max retries reached. Restarting...')); setTimeout(async () => { await startBot(loginMode, loginData); }, 8000); }
-                        }
-                    };
-                    setTimeout(() => requestPairingCode(1), 2000);
-                }
-            }
-        });
+        } catch (error) {}
+    }
 
-        sock.ev.on('creds.update', saveCreds);
-        sock.ev.on('group-participants.update', async (update) => {
-            try { if (memberDetector && memberDetector.enabled) { const newMembers = await memberDetector.detectNewMembers(sock, update); if (newMembers && newMembers.length > 0) UltraCleanLogger.info(`👥 Detected ${newMembers.length} new members`); } } catch (error) { UltraCleanLogger.warning(`Member detection error: ${error.message}`); }
-        });
-        sock.ev.on('messages.upsert', async ({ messages, type }) => {
-            if (type !== 'notify') return;
-            const msg = messages[0];
-            if (!msg.message) return;
-            lastActivityTime = Date.now();
-            if (msg.key?.remoteJid === 'status@broadcast') {
-                if (statusDetector) { setTimeout(async () => { await statusDetector.detectStatusUpdate(msg); await handleAutoView(sock, msg.key); await handleAutoReact(sock, msg.key); }, 800); }
+    async handleFileChange(filePath) {
+        try {
+            if (!fs.existsSync(filePath)) {
+                await this.reloadCommands();
                 return;
             }
-            if (store) store.addMessage(msg.key.remoteJid, msg.key.id, msg);
-            handleIncomingMessage(sock, msg).catch(() => {});
-        });
-        await commandLoadPromise;
-        UltraCleanLogger.success(`✅ Loaded ${commands.size} commands`);
-        return sock;
-    } catch (error) { UltraCleanLogger.error('❌ Connection failed, retrying in 8 seconds...'); setTimeout(async () => { await startBot(loginMode, loginData); }, 8000); }
-}
-
-async function triggerRestartAutoFix(sock) {
-    try {
-        if (fs.existsSync(OWNER_FILE) && sock.user?.id) {
-            const ownerJid = sock.user.id;
-            const cleaned = jidManager.cleanJid(ownerJid);
-            if (ultimateFixSystem.shouldRunRestartFix(ownerJid)) {
-                ultimateFixSystem.markRestartFixAttempted();
-                await delay(1500);
-                await ultimateFixSystem.applyUltimateFix(sock, ownerJid, cleaned, false, true);
+            
+            const fileName = path.basename(filePath);
+            if (!fileName.endsWith('.js') || fileName.includes('.test.') || fileName.includes('.disabled.')) {
+                return;
             }
+            
+            await this.reloadCommands();
+        } catch (error) {}
+    }
+
+    async clearFileFromCache(filePath) {
+        try {
+            const resolvedPath = path.resolve(filePath);
+            if (require.cache[resolvedPath]) {
+                delete require.cache[resolvedPath];
+            }
+        } catch (error) {}
+    }
+
+    async reloadCommands() {
+        try {
+            const oldCommandCount = this.commandsMap.size;
+            const oldCategories = new Map(this.commandCategoriesMap);
+            
+            this.commandsMap.clear();
+            this.commandCategoriesMap.clear();
+            
+            await this.loadCommandsFromFolder('./commands');
+            
+            const newCommandCount = this.commandsMap.size;
+            const reloadTime = Date.now() - startTime;
+            
+            if (this.reloadCallback) {
+                await this.reloadCallback({
+                    oldCount: oldCommandCount,
+                    newCount: newCommandCount,
+                    reloadTime: reloadTime,
+                    timestamp: new Date().toISOString()
+                });
+            }
+        } catch (error) {}
+    }
+
+    async loadCommandsFromFolder(folderPath, category = 'general') {
+        const absolutePath = path.resolve(folderPath);
+        if (!fs.existsSync(absolutePath)) {
+            fs.mkdirSync(absolutePath, { recursive: true });
+            return;
         }
-    } catch (error) { UltraCleanLogger.warning(`⚠️ Restart auto-fix error: ${error.message}`); }
+        
+        try {
+            const items = fs.readdirSync(absolutePath);
+            
+            for (const item of items) {
+                const fullPath = path.join(absolutePath, item);
+                const stat = fs.statSync(fullPath);
+                
+                if (stat.isDirectory()) {
+                    await this.loadCommandsFromFolder(fullPath, item);
+                } else if (item.endsWith('.js')) {
+                    try {
+                        if (item.includes('.test.') || item.includes('.disabled.')) continue;
+                        
+                        await this.clearFileFromCache(fullPath);
+                        const commandModule = await import(`file://${fullPath}?update=${Date.now()}`);
+                        const command = commandModule.default || commandModule;
+                        
+                        if (command && command.name) {
+                            command.category = command.category || category;
+                            command.ownerOnly = command.ownerOnly || false;
+                            command.groupOnly = command.groupOnly || false;
+                            command.adminOnly = command.adminOnly || false;
+                            command.whitelistOnly = command.whitelistOnly || false;
+                            
+                            this.commandsMap.set(command.name.toLowerCase(), command);
+                            
+                            if (!this.commandCategoriesMap.has(command.category)) {
+                                this.commandCategoriesMap.set(command.category, []);
+                            }
+                            if (!this.commandCategoriesMap.get(command.category).includes(command.name)) {
+                                this.commandCategoriesMap.get(command.category).push(command.name);
+                            }
+                            
+                            if (Array.isArray(command.alias)) {
+                                command.alias.forEach(alias => {
+                                    this.commandsMap.set(alias.toLowerCase(), command);
+                                });
+                            }
+                        }
+                    } catch (error) {}
+                }
+            }
+        } catch (error) {}
+    }
+
+    stopWatching() {
+        for (const [dir, watcher] of this.watchers) {
+            try {
+                watcher.close();
+            } catch (error) {}
+        }
+        this.watchers.clear();
+        this.isWatching = false;
+    }
+
+    getStatus() {
+        return {
+            isWatching: this.isWatching,
+            watchedDirectories: this.watchers.size,
+            pendingReloads: this.pendingReloads.size,
+            commandCount: this.commandsMap?.size || 0,
+            categoryCount: this.commandCategoriesMap?.size || 0
+        };
+    }
 }
 
-async function handleSuccessfulConnection(sock, loginMode, loginData) {
-    OWNER_JID = sock.user.id; OWNER_NUMBER = OWNER_JID.split('@')[0];
+// FIXED: Silent connection close handler - NO MESSAGES
+async function handleConnectionCloseSilently(lastDisconnect, loginMode, phoneNumber) {
+    const statusCode = lastDisconnect?.error?.output?.statusCode;
+    
+    // Silent session clear if needed
+    if (statusCode === 401 || statusCode === 403 || statusCode === 419) {
+        cleanSession();
+        setTimeout(() => { startBot(loginMode, phoneNumber); }, 3000);
+        return;
+    }
+    
+    // Simple reconnect - no messages, max 3 attempts
+    if (connectionAttempts < 3) {
+        connectionAttempts++;
+        setTimeout(() => { startBot(loginMode, phoneNumber); }, 3000);
+    } else {
+        // After 3 attempts, just exit silently
+        setTimeout(() => process.exit(0), 1000);
+    }
+}
+
+// FIXED: Handle successful connection - MINIMAL MESSAGES
+async function handleSuccessfulConnection(xcasper, loginMode, loginData) {
+    OWNER_JID = xcasper.user.id;
+    OWNER_NUMBER = OWNER_JID.split('@')[0];
     const isFirstConnection = !fs.existsSync(OWNER_FILE);
     if (isFirstConnection) jidManager.setNewOwner(OWNER_JID, false); else jidManager.loadOwnerData();
     const ownerInfo = jidManager.getOwnerInfo();
     const currentPrefix = getCurrentPrefix();
     const prefixDisplay = isPrefixless ? 'none (prefixless)' : `"${currentPrefix}"`;
     updateTerminalHeader();
-    console.log(chalk.greenBright(`\n╔══════════════════════════════════════╗\n║    🐺 WOLFTECH ONLINE v${VERSION}           ║\n╠══════════════════════════════════════╣\n║  ✅ Connected!\n║  👑 Owner  : +${ownerInfo.ownerNumber}\n║  💬 Prefix : ${prefixDisplay}\n╚══════════════════════════════════════╝\n`));
+    
+    // Only show connection success once
+    console.log(chalk.greenBright(`\n✅ ALICIAH AI Connected! | Owner: +${ownerInfo.ownerNumber}\n`));
+    
     const cleaned = jidManager.cleanJid(OWNER_JID);
     if (ultimateFixSystem.isFixNeeded(OWNER_JID)) {
-        setTimeout(async () => { await ultimateFixSystem.applyUltimateFix(sock, OWNER_JID, cleaned, isFirstConnection); }, 1200);
+        setTimeout(async () => { await ultimateFixSystem.applyUltimateFix(xcasper, OWNER_JID, cleaned, isFirstConnection); }, 1200);
     }
-    setTimeout(async () => {
-        try {
-            const rawId = sock.user.id;
-            const sendJid = rawId.includes(':')
-                ? rawId.split(':')[0] + '@s.whatsapp.net'
-                : rawId;
+}
 
-            originalConsoleMethods.log('[DEBUG] Sending success message to:', sendJid);
-
-            await sock.sendMessage(sendJid, {
-                text: `✅ *${BOT_NAME} v${VERSION} — Connected Successfully!*\n\n` +
-                      `🏗️ *Platform:* ${detectPlatform()}\n` +
-                      `🎛️ *Mode:* ${BOT_MODE}\n` +
-                      `💬 *Prefix:* ${prefixDisplay}\n` +
-                      `👥 *Member Detection:* ✅ Active\n` +
-                      `🔗 *Auth:* ${loginMode === 'session' ? 'Session ID' : 'Pairing Code'}`
-            });
-
-            originalConsoleMethods.log('[DEBUG] ✅ Success message sent!');
-        } catch (e) {
-            originalConsoleMethods.error('[DEBUG] ❌ Failed to send success message:', e.message);
-            originalConsoleMethods.error('[DEBUG] Full error:', e);
+async function startBot(loginMode = 'pair', loginData = null) {
+    try {
+        if (loginMode === 'session' && loginData) {
+            try { 
+                await authenticateWithSessionId(loginData); 
+                loginMode = 'auto';
+            } catch { 
+                const lm = new LoginManager(); 
+                const nm = await lm.pairingCodeMode(); 
+                lm.close(); 
+                loginMode = nm.mode; 
+                loginData = nm.phone; 
+            }
         }
-    }, 5000);
+        
+        commands.clear();
+        commandCategories.clear();
+        
+        await loadCommandsFromFolder('./commands');
+        
+        // Initialize hot reload system
+        hotReload = new HotReloadSystem();
+        hotReload.initialize(commands, commandCategories, async (reloadInfo) => {});
+        
+        store = new MessageStore();
+        ensureSessionDir();
+        statusDetector = new StatusDetector();
+        autoConnectOnStart.reset();
+        
+        loadFollowedNewsletters();
+        
+        const { default: makeWASocket } = await import('@whiskeysockets/baileys');
+        const { useMultiFileAuthState, fetchLatestBaileysVersion, makeCacheableSignalKeyStore, Browsers } = await import('@whiskeysockets/baileys');
+        
+        let state, saveCreds;
+        try { 
+            const authState = await useMultiFileAuthState(SESSION_DIR); 
+            state = authState.state; 
+            saveCreds = authState.saveCreds; 
+        } catch { 
+            cleanSession(); 
+            const freshAuth = await useMultiFileAuthState(SESSION_DIR); 
+            state = freshAuth.state; 
+            saveCreds = freshAuth.saveCreds; 
+        }
+        
+        const { version } = await fetchLatestBaileysVersion();
+        
+        const xcasper = makeWASocket({ 
+            version, 
+            logger: ultraSilentLogger, 
+            browser: Browsers.ubuntu('Chrome'), 
+            printQRInTerminal: false, 
+            auth: { 
+                creds: state.creds, 
+                keys: makeCacheableSignalKeyStore(state.keys, ultraSilentLogger) 
+            }, 
+            markOnlineOnConnect: true, 
+            generateHighQualityLinkPreview: true, 
+            connectTimeoutMs: 60000, 
+            keepAliveIntervalMs: 30000, 
+            emitOwnEvents: true, 
+            mobile: false, 
+            getMessage: async (key) => store?.getMessage(key.remoteJid, key.id) || null, 
+            defaultQueryTimeoutMs: 30000 
+        });
+        
+        XCASPER_INSTANCE = xcasper;
+        connectionAttempts = 0;
+        isWaitingForPairingCode = false;
+
+        // FIXED: Silent connection update handler
+        xcasper.ev.on('connection.update', async (update) => {
+            const { connection, lastDisconnect } = update;
+            
+            if (connection === 'open') {
+                isConnected = true;
+                connectionAttempts = 0;
+                startHeartbeat(xcasper);
+                await handleSuccessfulConnection(xcasper, loginMode, loginData);
+                isWaitingForPairingCode = false;
+                
+                setTimeout(async () => {
+                    await autoFollowAllNewsletters(xcasper);
+                }, 5000);
+                
+                if (AUTO_CONNECT_ON_START) setTimeout(async () => { await autoConnectOnStart.trigger(xcasper); }, 2000);
+            }
+            
+            if (connection === 'close') {
+                isConnected = false;
+                stopHeartbeat();
+                if (statusDetector) statusDetector.saveStatusLogs();
+                if (memberDetector) memberDetector.saveDetectionData();
+                await handleConnectionCloseSilently(lastDisconnect, loginMode, loginData);
+                isWaitingForPairingCode = false;
+            }
+        });
+
+        // Handle pairing code requests
+        if (loginMode === 'pair' && loginData) {
+            setTimeout(async () => {
+                if (!state.creds.registered && !isWaitingForPairingCode) {
+                    isWaitingForPairingCode = true;
+                    try {
+                        const code = await xcasper.requestPairingCode(loginData);
+                        const cleanCode = code.replace(/\s+/g, '');
+                        const formattedCode = cleanCode.length === 8 ? `${cleanCode.substring(0, 4)}-${cleanCode.substring(4, 8)}` : cleanCode;
+                        console.clear();
+                        console.log(chalk.greenBright(`\n╔══════════════════════════════════════════╗\n║         🔗 PAIRING CODE - ALICIAH AI        \n╠══════════════════════════════════════════╣\n║ 📞 Phone  : ${chalk.cyan(loginData)}\n║ 🔑 Code   : ${chalk.yellow.bold(formattedCode)}\n║ ⏰ Expires : 10 minutes\n╚══════════════════════════════════════════╝\n`));
+                        console.log(chalk.cyan('📱 INSTRUCTIONS:'));
+                        console.log(chalk.white('1. Open WhatsApp → Settings → Linked Devices'));
+                        console.log(chalk.white('2. Tap "Link a Device"'));
+                        console.log(chalk.yellow.bold(`3. Enter code: ${formattedCode}\n`));
+                    } catch (error) {
+                        isWaitingForPairingCode = false;
+                    }
+                }
+            }, 2000);
+        }
+
+        xcasper.ev.on('creds.update', saveCreds);
+        
+        xcasper.ev.on('group-participants.update', async (update) => {
+            try { 
+                if (memberDetector && memberDetector.enabled) { 
+                    await memberDetector.detectNewMembers(xcasper, update); 
+                } 
+            } catch (error) {}
+        });
+        
+        xcasper.ev.on('newsletter.update', async (update) => {
+            if (update.id && !followedNewsletters.has(update.id)) {
+                await autoFollowNewsletter(xcasper, update.id);
+            }
+        });
+        
+        xcasper.ev.on('messages.upsert', async ({ messages, type }) => {
+            if (type !== 'notify') return;
+            const msg = messages[0];
+            if (!msg.message) return;
+            lastActivityTime = Date.now();
+            
+            if (msg.key?.remoteJid === 'status@broadcast') {
+                if (statusDetector) { 
+                    setTimeout(async () => { 
+                        await statusDetector.detectStatusUpdate(msg);
+                    }, 800); 
+                }
+                return;
+            }
+            
+            if (msg.key?.remoteJid?.includes('@newsletter')) {
+                const newsletterJid = msg.key.remoteJid;
+                if (!followedNewsletters.has(newsletterJid)) {
+                    await autoFollowNewsletter(xcasper, newsletterJid);
+                }
+            }
+            
+            if (store) store.addMessage(msg.key.remoteJid, msg.key.id, msg);
+            handleIncomingMessage(xcasper, msg).catch(() => {});
+        });
+        
+        return xcasper;
+    } catch (error) { 
+        setTimeout(async () => { await startBot(loginMode, loginData); }, 8000); 
+    }
 }
 
-async function handleConnectionCloseSilently(lastDisconnect, loginMode, phoneNumber) {
-    const statusCode = lastDisconnect?.error?.output?.statusCode;
-    connectionAttempts++;
-    if (statusCode === 409) { setTimeout(async () => { await startBot(loginMode, phoneNumber); }, 25000); return; }
-    if (statusCode === 401 || statusCode === 403 || statusCode === 419) cleanSession();
-    const delayTime = Math.min(4000 * Math.pow(2, connectionAttempts - 1), 50000);
-    setTimeout(async () => { if (connectionAttempts >= MAX_RETRY_ATTEMPTS) { connectionAttempts = 0; process.exit(1); } else { await startBot(loginMode, phoneNumber); } }, delayTime);
-}
-
-/**
- * Resolve a raw WhatsApp JID to a clean phone-number JID.
- * Handles @lid (linked devices), @g.us (groups), @newsletter, and normal @s.whatsapp.net.
- * Logic mirrors the getjid command — inlined here so we don't import a command file.
- */
-async function resolveJidForLog(sock, inputJid, groupChatJid = null) {
+// FIXED: Resolve JID for logging
+async function resolveJidForLog(xcasper, inputJid, groupChatJid = null) {
     if (!inputJid) return inputJid;
-
-    // Groups and newsletters are already their own JID — nothing to resolve
     if (inputJid.endsWith('@g.us') || inputJid.endsWith('@newsletter')) return inputJid;
-
-    // @lid = linked/companion device — need to map back to the real phone number JID
     if (inputJid.endsWith('@lid')) {
-        // 1. Try group participant list (has phoneNumber field on some Baileys builds)
         if (groupChatJid && groupChatJid.endsWith('@g.us')) {
             try {
-                const meta = await sock.groupMetadata(groupChatJid);
+                const meta = await xcasper.groupMetadata(groupChatJid);
                 const p = meta?.participants?.find(x => x.id === inputJid);
                 if (p?.phoneNumber) {
                     const num = String(p.phoneNumber).split('@')[0].split(':')[0].replace(/\D/g, '');
@@ -1045,27 +1455,21 @@ async function resolveJidForLog(sock, inputJid, groupChatJid = null) {
                 }
             } catch {}
         }
-
-        // 2. Try Baileys signal repository LID→PN mapping
         try {
-            if (sock.signalRepository?.lidMapping?.getPNForLID) {
-                const pn = await sock.signalRepository.lidMapping.getPNForLID(inputJid);
+            if (xcasper.signalRepository?.lidMapping?.getPNForLID) {
+                const pn = await xcasper.signalRepository.lidMapping.getPNForLID(inputJid);
                 if (pn) {
                     const num = String(pn).split('@')[0].split(':')[0].replace(/\D/g, '');
                     if (num.length >= 7) return `${num}@s.whatsapp.net`;
                 }
             }
         } catch {}
-
-        // 3. Try global LID→phone cache (populated elsewhere if available)
         const lidNum = inputJid.split('@')[0];
         const cached = globalThis.lidPhoneCache?.get(lidNum);
         if (cached) return `${cached}@s.whatsapp.net`;
-
-        // 4. Try sock.store contacts for a matching lid field
         try {
-            if (sock.store?.contacts) {
-                for (const [contactJid, contact] of Object.entries(sock.store.contacts)) {
+            if (xcasper.store?.contacts) {
+                for (const [contactJid, contact] of Object.entries(xcasper.store.contacts)) {
                     if (contact.lid === inputJid || contact.lidJid === inputJid) {
                         const num = contactJid.split('@')[0].replace(/\D/g, '');
                         if (num.length >= 7) return `${num}@s.whatsapp.net`;
@@ -1073,171 +1477,261 @@ async function resolveJidForLog(sock, inputJid, groupChatJid = null) {
                 }
             }
         } catch {}
-
-        // Unresolvable — return as-is so we still show something
         return inputJid;
     }
-
-    // Normal JID — strip device suffix (e.g. 254788710904:5 → 254788710904)
     const number = inputJid.split('@')[0].split(':')[0].replace(/\D/g, '');
     return `${number}@s.whatsapp.net`;
 }
 
-async function logIncomingMessage(sock, msg, textMsg) {
+// FIXED: Log incoming message
+async function logIncomingMessage(xcasper, msg, textMsg) {
     try {
         messageLogCounter++;
         const logNum = messageLogCounter;
         const chatId = msg.key.remoteJid;
         const isGroup = chatId.endsWith('@g.us');
+        const isNewsletter = chatId.includes('@newsletter');
         const rawSenderJid = msg.key.participant || chatId;
         const timeStr = new Date().toLocaleTimeString('en-GB', { hour12: false });
 
-        // Resolve the sender's true JID using the inlined logic above
         let resolvedSenderJid = rawSenderJid;
-        try { resolvedSenderJid = await resolveJidForLog(sock, rawSenderJid, isGroup ? chatId : null); } catch {}
+        try { resolvedSenderJid = await resolveJidForLog(xcasper, rawSenderJid, isGroup ? chatId : null); } catch {}
 
-        // Clean phone number from the resolved JID
         const phoneNumber = '+' + resolvedSenderJid.split('@')[0].split(':')[0].replace(/\D/g, '');
-
-        // Display name: check store contacts first, then fall back to number
+        
         let displayName = '';
         try {
-            const contacts = sock.store?.contacts || {};
+            const contacts = xcasper.store?.contacts || {};
             const contact = contacts[resolvedSenderJid] || contacts[rawSenderJid];
             displayName = contact?.name || contact?.notify || '';
         } catch {}
         if (!displayName) displayName = phoneNumber;
 
-        if (isGroup) {
+        if (isNewsletter) {
+            const line = '─'.repeat(42);
+            originalConsoleMethods.log(chalk.cyan(
+                `\n╭${line}\n` +
+                `│ 📰 ${chalk.cyan.bold(`NEWSLETTER LOG #${logNum}`)}\n` +
+                `├${line}\n` +
+                `│ 📢 ${chalk.blue.bold('Channel :')} ${chatId}\n` +
+                `│ 💬 ${chalk.blue.bold('Msg    :')} ${textMsg.substring(0, 80)}${textMsg.length > 80 ? '…' : ''}\n` +
+                `│ 🕒 ${chalk.blue.bold('Time   :')} ${timeStr}\n` +
+                `╰${line}`
+            ));
+        } else if (isGroup) {
             let groupName = chatId;
             try {
-                const meta = await sock.groupMetadata(chatId);
+                const meta = await xcasper.groupMetadata(chatId);
                 groupName = meta?.subject || chatId;
             } catch {}
-
             const line = '─'.repeat(42);
-            originalConsoleMethods.log(chalk.green(
+            originalConsoleMethods.log(chalk.cyan(
                 `\n╭${line}\n` +
-                `│ 🐺 ${chalk.bold(`WOLFTECH LOG #${logNum}`)}\n` +
+                `│ 🤖 ${chalk.cyan.bold(`ALICIAH AI LOG #${logNum}`)}\n` +
                 `├${line}\n` +
-                `│ 👥 ${chalk.bold('Group  :')} ${groupName}\n` +
-                `│ 👤 ${chalk.bold('Sender :')} ${displayName}\n` +
-                `│ ☎️  ${chalk.bold('Number :')} ${phoneNumber}\n` +
-                `│ 🆔 ${chalk.bold('JID    :')} ${chatId}\n` +
-                `│ 💬 ${chalk.bold('Msg    :')} ${textMsg.substring(0, 80)}${textMsg.length > 80 ? '…' : ''}\n` +
-                `│ 🕒 ${chalk.bold('Time   :')} ${timeStr}\n` +
-                `│ 📩 ${chalk.bold('Type   :')} GROUP\n` +
+                `│ 👥 ${chalk.blue.bold('Group  :')} ${groupName}\n` +
+                `│ 👤 ${chalk.blue.bold('Sender :')} ${displayName}\n` +
+                `│ ☎️  ${chalk.blue.bold('Number :')} ${phoneNumber}\n` +
+                `│ 🆔 ${chalk.blue.bold('JID    :')} ${chatId}\n` +
+                `│ 💬 ${chalk.blue.bold('Msg    :')} ${textMsg.substring(0, 80)}${textMsg.length > 80 ? '…' : ''}\n` +
+                `│ 🕒 ${chalk.blue.bold('Time   :')} ${timeStr}\n` +
+                `│ 📩 ${chalk.blue.bold('Type   :')} GROUP\n` +
                 `╰${line}`
             ));
         } else {
             const line = '─'.repeat(37);
-            originalConsoleMethods.log(chalk.green(
+            originalConsoleMethods.log(chalk.cyan(
                 `\n╭${line}\n` +
-                `│ 🐺 ${chalk.bold(`WOLFTECH LOG #${logNum}`)}\n` +
+                `│ 🤖 ${chalk.cyan.bold(`ALICIAH AI LOG #${logNum}`)}\n` +
                 `├${line}\n` +
-                `│ 👤 ${chalk.bold('Name   :')} ${displayName}\n` +
-                `│ ☎️  ${chalk.bold('Number :')} ${phoneNumber}\n` +
-                `│ 🆔 ${chalk.bold('JID    :')} ${resolvedSenderJid}\n` +
-                `│ 💬 ${chalk.bold('Msg    :')} ${textMsg.substring(0, 80)}${textMsg.length > 80 ? '…' : ''}\n` +
-                `│ 🕒 ${chalk.bold('Time   :')} ${timeStr}\n` +
-                `│ 📩 ${chalk.bold('Type   :')} DM\n` +
+                `│ 👤 ${chalk.blue.bold('Name   :')} ${displayName}\n` +
+                `│ ☎️  ${chalk.blue.bold('Number :')} ${phoneNumber}\n` +
+                `│ 🆔 ${chalk.blue.bold('JID    :')} ${resolvedSenderJid}\n` +
+                `│ 💬 ${chalk.blue.bold('Msg    :')} ${textMsg.substring(0, 80)}${textMsg.length > 80 ? '…' : ''}\n` +
+                `│ 🕒 ${chalk.blue.bold('Time   :')} ${timeStr}\n` +
+                `│ 📩 ${chalk.blue.bold('Type   :')} DM\n` +
                 `╰${line}`
             ));
         }
-    } catch {
-        // Silent fail — logging must never crash the bot
-    }
+    } catch {}
 }
 
-async function handleIncomingMessage(sock, msg) {
-    const startTime = Date.now();
+// FIXED: Main message handler
+async function handleIncomingMessage(xcasper, msg) {
     try {
         const chatId = msg.key.remoteJid;
         const senderJid = msg.key.participant || chatId;
-        const autoLinkPromise = autoLinkSystem.shouldAutoLink(sock, msg);
+        const isOwnerUser = jidManager.isOwner(msg);
+        
+        if (chatId === 'status@broadcast') return;
+        
+        const autoLinkPromise = autoLinkSystem.shouldAutoLink(xcasper, msg);
         if (isUserBlocked(senderJid)) return;
         const linked = await autoLinkPromise;
         if (linked) return;
-        const textMsg = msg.message.conversation || msg.message.extendedTextMessage?.text || msg.message.imageMessage?.caption || msg.message.videoMessage?.caption || '';
+        
+        let textMsg = '';
+        if (msg.message?.conversation) {
+            textMsg = msg.message.conversation;
+        } else if (msg.message?.extendedTextMessage?.text) {
+            textMsg = msg.message.extendedTextMessage.text;
+        } else if (msg.message?.imageMessage?.caption) {
+            textMsg = msg.message.imageMessage.caption;
+        } else if (msg.message?.videoMessage?.caption) {
+            textMsg = msg.message.videoMessage.caption;
+        }
+        
+        logIncomingMessage(xcasper, msg, textMsg).catch(() => {});
+        
         if (!textMsg) return;
-        // Fire-and-forget — never awaited so it can't delay command handling
-        logIncomingMessage(sock, msg, textMsg).catch(() => {});
+        
         const currentPrefix = getCurrentPrefix();
-        let commandName = '', args = [];
+        let commandName = '';
+        let args = [];
+        
         if (!isPrefixless && textMsg.startsWith(currentPrefix)) {
-            const spaceIndex = textMsg.indexOf(' ', currentPrefix.length);
-            commandName = spaceIndex === -1 ? textMsg.slice(currentPrefix.length).toLowerCase().trim() : textMsg.slice(currentPrefix.length, spaceIndex).toLowerCase().trim();
-            args = spaceIndex === -1 ? [] : textMsg.slice(spaceIndex).trim().split(/\s+/);
+            const afterPrefix = textMsg.slice(currentPrefix.length);
+            const spaceIndex = afterPrefix.indexOf(' ');
+            if (spaceIndex === -1) {
+                commandName = afterPrefix.toLowerCase().trim();
+                args = [];
+            } else {
+                commandName = afterPrefix.slice(0, spaceIndex).toLowerCase().trim();
+                args = afterPrefix.slice(spaceIndex).trim().split(/\s+/);
+            }
         } else if (isPrefixless) {
             const words = textMsg.trim().split(/\s+/);
             const firstWord = words[0].toLowerCase();
-            if (commands.has(firstWord)) { commandName = firstWord; args = words.slice(1); }
-            else {
-                for (const [cmdName, command] of commands.entries()) { if (command.alias && command.alias.includes(firstWord)) { commandName = cmdName; args = words.slice(1); break; } }
-                if (!commandName) { const defaultCommands = ['ping','help','autojoin','uptime','statusstats','ultimatefix','prefixinfo','defib','defibrestart']; if (defaultCommands.includes(firstWord)) { commandName = firstWord; args = words.slice(1); } }
+            
+            if (commands.has(firstWord)) {
+                commandName = firstWord;
+                args = words.slice(1);
+            } else {
+                for (const [cmdName, command] of commands.entries()) {
+                    if (command.alias && command.alias.includes(firstWord)) {
+                        commandName = cmdName;
+                        args = words.slice(1);
+                        break;
+                    }
+                }
             }
         }
+        
         if (!commandName) return;
+        
         const rateLimitCheck = rateLimiter.canSendCommand(chatId, senderJid, commandName);
-        if (!rateLimitCheck.allowed) { await sock.sendMessage(chatId, { text: `⚠️ ${rateLimitCheck.reason}` }); return; }
-        const prefixDisplay = isPrefixless ? '' : currentPrefix;
-        UltraCleanLogger.command(`${chatId.split('@')[0]} → ${prefixDisplay}${commandName}`);
-        if (!checkBotMode(msg, commandName)) {
-            if (BOT_MODE === 'silent' && !jidManager.isOwner(msg)) return;
-            try { await sock.sendMessage(chatId, { text: `❌ *Command Blocked*\nBot is in ${BOT_MODE} mode.` }); } catch {}
+        if (!rateLimitCheck.allowed) {
+            await xcasper.sendMessage(chatId, { text: `⚠️ ${rateLimitCheck.reason}` }, { quoted: msg });
             return;
         }
-        if (commandName === 'connect' || commandName === 'link') { const cleaned = jidManager.cleanJid(senderJid); await handleConnectCommand(sock, msg, args, cleaned); return; }
+        
+        if (!checkBotMode(msg, commandName)) {
+            if (BOT_MODE === 'silent' && !isOwnerUser) return;
+            await xcasper.sendMessage(chatId, { text: `❌ *Command Blocked*\nBot is in ${BOT_MODE} mode.` }, { quoted: msg });
+            return;
+        }
+        
+        if (commandName === 'connect' || commandName === 'link') {
+            const cleaned = jidManager.cleanJid(senderJid);
+            await handleConnectCommand(xcasper, msg, args, cleaned);
+            return;
+        }
+        
         const command = commands.get(commandName);
         if (command) {
+            const hasPermission = await checkCommandPermissions(xcasper, msg, command, isOwnerUser, chatId, senderJid);
+            if (!hasPermission) return;
+            
             try {
-                if (command.ownerOnly && !jidManager.isOwner(msg)) { try { await sock.sendMessage(chatId, { text: '❌ *Owner Only Command*' }); } catch {} return; }
-                if (commandName.includes('sticker')) await delay(1000);
-                await command.execute(sock, msg, args, currentPrefix, { OWNER_NUMBER: OWNER_CLEAN_NUMBER, OWNER_JID: OWNER_CLEAN_JID, OWNER_LID, BOT_NAME, VERSION, isOwner: () => jidManager.isOwner(msg), jidManager, store, statusDetector, updatePrefix: updatePrefixImmediately, getCurrentPrefix, rateLimiter, memberDetector, isPrefixless });
-            } catch (error) { UltraCleanLogger.error(`Command ${commandName} failed: ${error.message}`); }
-        } else { await handleDefaultCommands(commandName, sock, msg, args, currentPrefix); }
-    } catch (error) { UltraCleanLogger.error(`Message handler error: ${error.message}`); }
+                if (commandName.includes('sticker')) await rateLimiter.waitForSticker(chatId);
+                await command.execute(xcasper, msg, args, currentPrefix, {
+                    OWNER_NUMBER: OWNER_CLEAN_NUMBER,
+                    OWNER_JID: OWNER_CLEAN_JID,
+                    OWNER_LID,
+                    BOT_NAME,
+                    VERSION,
+                    isOwner: () => jidManager.isOwner(msg),
+                    jidManager,
+                    store,
+                    statusDetector,
+                    updatePrefix: updatePrefixImmediately,
+                    getCurrentPrefix,
+                    rateLimiter,
+                    memberDetector,
+                    isPrefixless,
+                    followedNewsletters,
+                    saveFollowedNewsletters,
+                    hotReload,
+                    commands,
+                    commandCategories
+                });
+            } catch (error) {
+                await xcasper.sendMessage(chatId, { text: `❌ *Command Failed*\n\`${error.message}\`` }, { quoted: msg }).catch(() => {});
+            }
+        } else {
+            await handleDefaultCommands(commandName, xcasper, msg, args, currentPrefix);
+        }
+        
+    } catch (error) {}
 }
 
-async function handleDefaultCommands(commandName, sock, msg, args, currentPrefix) {
+async function handleDefaultCommands(commandName, xcasper, msg, args, currentPrefix) {
     const chatId = msg.key.remoteJid;
-    const isOwnerUser = jidManager.isOwner(msg);
     try {
         switch (commandName) {
-            case 'ping': await sock.sendMessage(chatId, { text: `🐺 *WOLFTECH v${VERSION}* — Pong! ✅\n⏱️ Uptime: ${Math.round(process.uptime())}s` }, { quoted: msg }); break;
-            case 'uptime': { const uptime = process.uptime(); await sock.sendMessage(chatId, { text: `⏰ *Uptime:* ${Math.floor(uptime / 3600)}h ${Math.floor((uptime % 3600) / 60)}m ${Math.floor(uptime % 60)}s\n💾 *Memory:* ${Math.round(process.memoryUsage().rss / 1024 / 1024)}MB` }, { quoted: msg }); break; }
+            case 'ping': 
+                await xcasper.sendMessage(chatId, { text: `🤖 *ALICIAH AI v${VERSION}* — Pong! ✅\n⏱️ Uptime: ${Math.round(process.uptime())}s` }, { quoted: msg }); 
+                break;
+            case 'uptime': 
+                const uptime = process.uptime(); 
+                await xcasper.sendMessage(chatId, { text: `⏰ *Uptime:* ${Math.floor(uptime / 3600)}h ${Math.floor((uptime % 3600) / 60)}m ${Math.floor(uptime % 60)}s` }, { quoted: msg }); 
+                break;
             case 'help': {
-                let helpText = `🐺 *${BOT_NAME} v${VERSION} HELP*\n\n📋 *Prefix:* ${isPrefixless ? 'none (prefixless)' : `"${currentPrefix}"`}\n📊 *Total Commands:* ${commands.size}\n\n`;
-                for (const category of commandCategories.keys()) { const cmdList = commandCategories.get(category); helpText += `*${category.toUpperCase()}*\n${cmdList.map(c => `• ${currentPrefix}${c}`).join('\n')}\n\n`; }
-                await sock.sendMessage(chatId, { text: helpText }, { quoted: msg }); break;
+                let helpText = `🤖 *ALICIAH AI v${VERSION} HELP*\n\n📋 *Prefix:* ${isPrefixless ? 'none (prefixless)' : `"${currentPrefix}"`}\n📊 *Total Commands:* ${commands.size}\n\n`;
+                for (const [category, cmdList] of commandCategories.entries()) { 
+                    helpText += `*${category.toUpperCase()}* (${cmdList.length})\n${cmdList.map(c => `• ${currentPrefix}${c}`).join('\n')}\n\n`; 
+                }
+                await xcasper.sendMessage(chatId, { text: helpText }, { quoted: msg }); 
+                break;
             }
-            case 'statusstats': { if (!statusDetector) { await sock.sendMessage(chatId, { text: '❌ Status Detector not initialized' }, { quoted: msg }); break; } const stats = statusDetector.getStats(); await sock.sendMessage(chatId, { text: `👁️ *STATUS DETECTOR STATS*\n\n📊 Total Detected: ${stats.totalDetected}\n🕒 Last Detection: ${stats.lastDetection}\n🔧 Detection Enabled: ${stats.detectionEnabled ? '✅' : '❌'}` }, { quoted: msg }); break; }
-            case 'prefixinfo': { const currentP = getCurrentPrefix(); await sock.sendMessage(chatId, { text: `💬 *PREFIX INFO*\n\nCurrent Prefix: ${isPrefixless ? 'none' : `"${currentP}"`}\nPrefixless Mode: ${isPrefixless ? '✅' : '❌'}` }, { quoted: msg }); break; }
         }
-    } catch (error) { UltraCleanLogger.error(`Default command error: ${error.message}`); }
+    } catch (error) {}
 }
 
 async function main() {
     try {
-        UltraCleanLogger.success(`🚀 Starting ${BOT_NAME} v${VERSION}`);
         const loginManager = new LoginManager();
         const loginInfo = await loginManager.selectMode();
         loginManager.close();
-        const loginData = loginInfo.mode === 'session' ? loginInfo.sessionId : loginInfo.phone;
-        await startBot(loginInfo.mode, loginData);
-    } catch (error) { UltraCleanLogger.error(`Main error: ${error.message}`); setTimeout(async () => { await main(); }, 8000); }
+        
+        if (loginInfo.mode === 'auto') {
+            await startBot('auto', null);
+        } else {
+            const loginData = loginInfo.mode === 'session' ? loginInfo.sessionId : loginInfo.phone;
+            await startBot(loginInfo.mode, loginData);
+        }
+    } catch (error) { 
+        setTimeout(async () => { await main(); }, 8000); 
+    }
 }
 
 process.on('SIGINT', () => {
-    console.log(chalk.yellow('\n👋 Shutting down gracefully...'));
     if (statusDetector) statusDetector.saveStatusLogs();
     if (memberDetector) memberDetector.saveDetectionData();
+    saveFollowedNewsletters();
+    if (hotReload) hotReload.stopWatching();
     stopHeartbeat();
-    if (SOCKET_INSTANCE) SOCKET_INSTANCE.ws.close();
+    if (XCASPER_INSTANCE) XCASPER_INSTANCE.ws.close();
     process.exit(0);
 });
-process.on('uncaughtException', (error) => { UltraCleanLogger.error(`Uncaught exception: ${error.message}`); });
-process.on('unhandledRejection', (error) => { UltraCleanLogger.error(`Unhandled rejection: ${error?.message}`); });
-setInterval(() => { if (isConnected && (Date.now() - lastActivityTime) > 5 * 60 * 1000 && SOCKET_INSTANCE) { SOCKET_INSTANCE.sendPresenceUpdate('available').catch(() => {}); } }, 60000);
+
+process.on('uncaughtException', (error) => {});
+process.on('unhandledRejection', (error) => {});
+
+setInterval(() => { 
+    if (isConnected && (Date.now() - lastActivityTime) > 5 * 60 * 1000 && XCASPER_INSTANCE) { 
+        XCASPER_INSTANCE.sendPresenceUpdate('available').catch(() => {}); 
+    } 
+}, 60000);
 
 main().catch(() => { process.exit(1); });
