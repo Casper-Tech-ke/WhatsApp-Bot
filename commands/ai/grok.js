@@ -1,13 +1,13 @@
 // commands/ai/grok.js
-// Grok AI Command - Powered by CASPER TECH API
+// ALICIAH AI Command - Powered by CASPER TECH KE
 // Simple AI chat using grok API
 
 import axios from 'axios';
 
 export default {
     name: 'grok',
-    alias: ['ai', 'ask', 'chat'],
-    description: 'Chat with Grok AI',
+    alias: ['ai', 'ask', 'chat', 'alicia'],
+    description: 'Chat with ALICIAH AI - Powered by CASPER TECH KE',
     category: 'ai',
     ownerOnly: false,
     
@@ -22,7 +22,10 @@ export default {
         // Check if user provided a question
         if (!args.length) {
             await xcasper.sendMessage(chatId, { 
-                text: `🤖 *Grok AI*\n\nUsage: ${prefix}grok [your message]\n\nExample: ${prefix}grok Hello` 
+                text: `🤖 *ALICIAH AI - Chat System*\n\n` +
+                      `📝 *Usage:* ${prefix}grok [your message]\n` +
+                      `💬 *Example:* ${prefix}grok Hello\n\n` +
+                      `> grok  ALICIAH | CASPER TECH`
             }, { quoted: msg });
             return;
         }
@@ -40,18 +43,18 @@ export default {
                 const reply = response.data.reply;
                 
                 await xcasper.sendMessage(chatId, { 
-                    text: `🤖 *Grok:* ${reply}` 
+                    text: `${reply}\n\n> grok  ALICIAH | CASPER TECH`
                 }, { quoted: msg });
             } else {
                 await xcasper.sendMessage(chatId, { 
-                    text: `❌ Error: Could not get response from AI` 
+                    text: `❌ Error: Could not get response from AI\n\n> grok  ALICIAH | CASPER TECH`
                 }, { quoted: msg });
             }
             
         } catch (error) {
-            console.error('Grok API Error:', error.message);
+            console.error('AI API Error:', error.message);
             await xcasper.sendMessage(chatId, { 
-                text: `❌ Error: ${error.message}` 
+                text: `❌ Error: ${error.message}\n\n> grok  ALICIAH | CASPER TECH`
             }, { quoted: msg });
         }
     }
