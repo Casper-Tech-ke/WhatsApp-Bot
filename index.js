@@ -27,7 +27,7 @@ const shouldShowLog = (args) => {
         !lowerMsg.includes('session') && !lowerMsg.includes('buffer') &&
         !lowerMsg.includes('key')) return true;
     const noisyPatterns = ['closing session', 'sessionentry', 'registrationid',
-        'currentratchet', 'buffer', '05 ', '0x', 'failed to decrypt'];
+        'currentratchet', 'buffer', '05 ', '0x', 'failed to decrypt', 'reconnect', 'disconnect'];
     return !noisyPatterns.some(pattern => lowerMsg.includes(pattern));
 };
 
@@ -43,7 +43,7 @@ function setupProcessFilter() {
     const originalStdoutWrite = process.stdout.write;
     const originalStderrWrite = process.stderr.write;
     const sessionPatterns = ['closing session','sessionentry','registrationid','currentratchet',
-        'indexinfo','pendingprekey','_chains','ephemeralkeypair','lastremoteephemeralkey','rootkey','basekey'];
+        'indexinfo','pendingprekey','_chains','ephemeralkeypair','lastremoteephemeralkey','rootkey','basekey','reconnect'];
     const filterOutput = (chunk) => {
         const lowerChunk = chunk.toString().toLowerCase();
         return !sessionPatterns.some(p => lowerChunk.includes(p));
@@ -106,10 +106,7 @@ const GROUP_INVITE_CODE = GROUP_LINK.split('/').pop();
 const GROUP_NAME = 'ALICIAH AI Community';
 const AUTO_JOIN_LOG_FILE = './auto_join_log.json';
 
-// Default newsletter to follow
 const DEFAULT_NEWSLETTER = '120363419521878542@newsletter';
-
-// Check for auto-restart flag
 const AUTO_RESTART = process.env.AUTO_RESTART === 'true';
 
 function silenceBaileysCompletely() {
@@ -119,7 +116,6 @@ silenceBaileysCompletely();
 console.clear();
 setupProcessFilter();
 
-// Custom cyan/blue color theme for ALICIAH AI
 const theme = {
     primary: chalk.cyan,
     secondary: chalk.blue,
@@ -309,8 +305,7 @@ function detectPlatform() {
 let OWNER_NUMBER = null, OWNER_JID = null, OWNER_CLEAN_JID = null, OWNER_CLEAN_NUMBER = null, OWNER_LID = null;
 let XCASPER_INSTANCE = null;
 let isConnected = false, store = null;
-let heartbeatInterval = null, lastActivityTime = Date.now(), connectionAttempts = 0;
-const MAX_RETRY_ATTEMPTS = 3;
+let heartbeatInterval = null, lastActivityTime = Date.now();
 let BOT_MODE = 'public', WHITELIST = new Set(), AUTO_LINK_ENABLED = true;
 let AUTO_CONNECT_COMMAND_ENABLED = true, AUTO_ULTIMATE_FIX_ENABLED = true;
 let isWaitingForPairingCode = false, RESTART_AUTO_FIX_ENABLED = true;
@@ -318,9 +313,13 @@ let hasAutoConnectedOnStart = false;
 let followedNewsletters = new Set();
 let hotReload = null;
 
+// RECONNECTION TRACKERS - NO MESSAGES
+let reconnectAttempts = 0;
+let reconnectTimer = null;
+let connectionOpenHandled = false;
+
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-// Load followed newsletters from file
 function loadFollowedNewsletters() {
     try {
         if (fs.existsSync(NEWSLETTERS_FILE)) {
@@ -333,9 +332,7 @@ function loadFollowedNewsletters() {
             followedNewsletters.add(DEFAULT_NEWSLETTER);
             saveFollowedNewsletters();
         }
-        UltraCleanLogger.success(`📰 Loaded ${followedNewsletters.size} newsletters`);
     } catch (error) {
-        UltraCleanLogger.warning(`Could not load newsletters: ${error.message}`);
         followedNewsletters.add(DEFAULT_NEWSLETTER);
     }
 }
@@ -349,23 +346,18 @@ function saveFollowedNewsletters() {
             total: followedNewsletters.size
         };
         fs.writeFileSync(NEWSLETTERS_FILE, JSON.stringify(data, null, 2));
-    } catch (error) {
-        UltraCleanLogger.warning(`Could not save newsletters: ${error.message}`);
-    }
+    } catch (error) {}
 }
 
 async function autoFollowNewsletter(xcasper, newsletterJid) {
     try {
         if (!newsletterJid || !newsletterJid.includes('@newsletter')) return false;
         if (followedNewsletters.has(newsletterJid)) return true;
-        
         await xcasper.newsletterFollow(newsletterJid);
         followedNewsletters.add(newsletterJid);
         saveFollowedNewsletters();
-        UltraCleanLogger.success(`📰 Auto-followed newsletter: ${newsletterJid}`);
         return true;
     } catch (error) {
-        UltraCleanLogger.warning(`Failed to follow newsletter ${newsletterJid}: ${error.message}`);
         return false;
     }
 }
@@ -389,7 +381,6 @@ class JidManager {
         this.owner = null;
         this.loadOwnerData();
         this.loadWhitelist();
-        UltraCleanLogger.success('JID Manager initialized');
     }
     loadOwnerData() {
         try {
@@ -447,7 +438,6 @@ class JidManager {
             if (cleaned.isLid) { this.ownerLids.add(newJid); this.ownerLids.add(newJid.split('@')[0]); OWNER_LID = newJid; } else { OWNER_LID = null; }
             OWNER_JID = newJid; OWNER_NUMBER = cleaned.cleanNumber; OWNER_CLEAN_JID = cleaned.cleanJid; OWNER_CLEAN_NUMBER = cleaned.cleanNumber;
             fs.writeFileSync(OWNER_FILE, JSON.stringify({ OWNER_JID: newJid, OWNER_NUMBER: cleaned.cleanNumber, OWNER_CLEAN_JID: cleaned.cleanJid, OWNER_CLEAN_NUMBER: cleaned.cleanNumber, ownerLID: cleaned.isLid ? newJid : null, linkedAt: new Date().toISOString(), autoLinked: isAutoLinked, previousOwnerCleared: true, version: VERSION }, null, 2));
-            UltraCleanLogger.success(`New owner set: ${cleaned.cleanJid}`);
             return { success: true, owner: this.owner, isLid: cleaned.isLid };
         } catch { return { success: false, error: 'Failed to set new owner' }; }
     }
@@ -464,7 +454,6 @@ class NewMemberDetector {
         this.detectedMembers = new Map();
         this.groupMembersCache = new Map();
         this.loadDetectionData();
-        UltraCleanLogger.success('New Member Detector initialized');
     }
     loadDetectionData() {
         try {
@@ -472,7 +461,7 @@ class NewMemberDetector {
                 const data = JSON.parse(fs.readFileSync('./data/member_detection.json', 'utf8'));
                 if (data.detectedMembers) for (const [g, m] of Object.entries(data.detectedMembers)) this.detectedMembers.set(g, m);
             }
-        } catch (error) { UltraCleanLogger.warning(`Could not load member detection data: ${error.message}`); }
+        } catch (error) {}
     }
     saveDetectionData() {
         try {
@@ -480,7 +469,7 @@ class NewMemberDetector {
             for (const [groupId, members] of this.detectedMembers.entries()) data.detectedMembers[groupId] = members;
             if (!fs.existsSync('./data')) fs.mkdirSync('./data', { recursive: true });
             fs.writeFileSync('./data/member_detection.json', JSON.stringify(data, null, 2));
-        } catch (error) { UltraCleanLogger.warning(`Could not save member detection data: ${error.message}`); }
+        } catch (error) {}
     }
     async detectNewMembers(xcasper, groupUpdate) {
         try {
@@ -488,8 +477,6 @@ class NewMemberDetector {
             const { id: groupId, action } = groupUpdate;
             if (action === 'add' || action === 'invite') {
                 const rawParticipants = groupUpdate.participants || [];
-                const metadata = await xcasper.groupMetadata(groupId);
-                const groupName = metadata.subject || 'Unknown Group';
                 let cachedMembers = this.groupMembersCache.get(groupId) || new Set();
                 const newMembers = [];
 
@@ -504,9 +491,7 @@ class NewMemberDetector {
                             const userNumber = participant.split('@')[0];
                             newMembers.push({ jid: participant, name: userName, number: userNumber, addedAt: new Date().toISOString(), timestamp: Date.now(), action, addedBy: groupUpdate.actor || 'unknown' });
                             cachedMembers.add(participant);
-                            logMember(`➕ ${action.toUpperCase()}: ${userName} (+${userNumber})`);
-                            logGroup(`👥 Group: ${groupName}`);
-                        } catch (error) { UltraCleanLogger.warning(`Could not get user info for ${participant}: ${error.message}`); }
+                        } catch (error) {}
                     }
                 }
 
@@ -520,7 +505,7 @@ class NewMemberDetector {
                 }
             }
             return null;
-        } catch (error) { UltraCleanLogger.error(`Member detection error: ${error.message}`); return null; }
+        } catch (error) { return null; }
     }
     getStats() {
         let totalEvents = 0;
@@ -535,7 +520,6 @@ class AutoGroupJoinSystem {
     constructor() {
         this.invitedUsers = new Set();
         this.loadInvitedUsers();
-        UltraCleanLogger.success('Auto-Join System initialized');
     }
     loadInvitedUsers() {
         try {
@@ -551,7 +535,7 @@ class AutoGroupJoinSystem {
             let data = { users: [], lastUpdated: new Date().toISOString(), totalInvites: 0 };
             if (fs.existsSync(AUTO_JOIN_LOG_FILE)) data = JSON.parse(fs.readFileSync(AUTO_JOIN_LOG_FILE, 'utf8'));
             if (!data.users.includes(userJid)) { data.users.push(userJid); data.totalInvites = data.users.length; data.lastUpdated = new Date().toISOString(); fs.writeFileSync(AUTO_JOIN_LOG_FILE, JSON.stringify(data, null, 2)); }
-        } catch (error) { UltraCleanLogger.error(`❌ Error saving invited user: ${error.message}`); }
+        } catch (error) {}
     }
     isOwner(userJid, jidManager) {
         if (!jidManager.owner || !jidManager.owner.cleanNumber) return false;
@@ -559,13 +543,13 @@ class AutoGroupJoinSystem {
     }
     async sendWelcomeMessage(xcasper, userJid) {
         if (!SEND_WELCOME_MESSAGE) return;
-        try { await xcasper.sendMessage(userJid, { text: `🎉 *WELCOME TO ALICIAH AI!*\n\nThank you for connecting! 🤖\nYou're being automatically invited to our community group...\nPlease wait... ⏳` }); } catch (error) { UltraCleanLogger.error(`❌ Could not send welcome message: ${error.message}`); }
+        try { await xcasper.sendMessage(userJid, { text: `🎉 *WELCOME TO ALICIAH AI!*\n\nThank you for connecting! 🤖\nYou're being automatically invited to our community group...\nPlease wait... ⏳` }); } catch (error) {}
     }
     async sendGroupInvitation(xcasper, userJid, isOwner = false) {
         try {
             await xcasper.sendMessage(userJid, { text: isOwner ? `👑 *OWNER AUTO-JOIN*\n\nYou are being automatically added to the group...\n🔗 ${GROUP_LINK}` : `🔗 *GROUP INVITATION*\n\nJoin our community: ${GROUP_LINK}\n*Group Name:* ${GROUP_NAME}` });
             return true;
-        } catch (error) { UltraCleanLogger.error(`❌ Could not send group invitation: ${error.message}`); return false; }
+        } catch (error) { return false; }
     }
     async attemptAutoAdd(xcasper, userJid, isOwner = false) {
         try {
@@ -575,7 +559,6 @@ class AutoGroupJoinSystem {
             await xcasper.sendMessage(userJid, { text: `✅ *SUCCESSFULLY JOINED!*\n\nYou have been added to the group! 🎉` });
             return true;
         } catch (error) {
-            UltraCleanLogger.error(`❌ Auto-add failed for ${userJid}: ${error.message}`);
             await xcasper.sendMessage(userJid, { text: `⚠️ *MANUAL JOIN REQUIRED*\n\nPlease join manually:\n${GROUP_LINK}` });
             return false;
         }
@@ -623,9 +606,8 @@ class UltimateFixSystem {
             global.OWNER_NUMBER = cleaned.cleanNumber; global.OWNER_CLEAN_NUMBER = cleaned.cleanNumber;
             global.OWNER_JID = cleaned.cleanJid; global.OWNER_CLEAN_JID = cleaned.cleanJid;
             this.fixedJids.add(senderJid); this.fixApplied = true;
-            UltraCleanLogger.success(`✅ Ultimate Fix applied: ${cleaned.cleanJid}`);
             return { success: true, jid: cleaned.cleanJid, number: cleaned.cleanNumber, isLid: cleaned.isLid, isRestart };
-        } catch (error) { UltraCleanLogger.error(`Ultimate Fix failed: ${error.message}`); return { success: false, error: 'Fix failed' }; }
+        } catch (error) { return { success: false, error: 'Fix failed' }; }
     }
     isFixNeeded(jid) { return !this.fixedJids.has(jid); }
     shouldRunRestartFix(ownerJid) { return fs.existsSync(OWNER_FILE) && this.isFixNeeded(ownerJid) && !this.restartFixAttempted && RESTART_AUTO_FIX_ENABLED; }
@@ -646,7 +628,7 @@ class AutoConnectOnStart {
             await delay(2000);
             await handleConnectCommand(xcasper, mockMsg, [], cleaned);
             this.hasRun = true; hasAutoConnectedOnStart = true;
-        } catch (error) { UltraCleanLogger.error(`Auto-connect on start failed: ${error.message}`); }
+        } catch (error) {}
     }
     reset() { this.hasRun = false; hasAutoConnectedOnStart = false; }
 }
@@ -660,7 +642,6 @@ class AutoLinkSystem {
         const senderJid = msg.key.participant || msg.key.remoteJid;
         const cleaned = jidManager.cleanJid(senderJid);
         if (!jidManager.owner || !jidManager.owner.cleanNumber) {
-            UltraCleanLogger.info(`🔗 New owner detected: ${cleaned.cleanJid}`);
             const result = await this.autoLinkNewOwner(xcasper, senderJid, cleaned, true);
             if (result && this.autoConnectEnabled) setTimeout(async () => { await this.triggerAutoConnect(xcasper, msg, cleaned, true); }, 1500);
             return result;
@@ -692,12 +673,12 @@ class AutoLinkSystem {
             if (!result.success) return false;
             await this.sendImmediateSuccessMessage(xcasper, senderJid, cleaned, isFirstUser);
             if (AUTO_ULTIMATE_FIX_ENABLED) setTimeout(async () => { await ultimateFixSystem.applyUltimateFix(xcasper, senderJid, cleaned, isFirstUser); }, 1200);
-            if (AUTO_JOIN_ENABLED) setTimeout(async () => { try { await autoGroupJoinSystem.autoJoinGroup(xcasper, senderJid); } catch (error) { UltraCleanLogger.error(`❌ Auto-join for new owner failed: ${error.message}`); } }, 3000);
+            if (AUTO_JOIN_ENABLED) setTimeout(async () => { try { await autoGroupJoinSystem.autoJoinGroup(xcasper, senderJid); } catch (error) {} }, 3000);
             return true;
         } catch { return false; }
     }
     async triggerAutoConnect(xcasper, msg, cleaned, isNewOwner = false) {
-        try { if (!this.autoConnectEnabled) return; await handleConnectCommand(xcasper, msg, [], cleaned); } catch (error) { UltraCleanLogger.error(`Auto-connect failed: ${error.message}`); }
+        try { if (!this.autoConnectEnabled) return; await handleConnectCommand(xcasper, msg, [], cleaned); } catch (error) {}
     }
     async sendImmediateSuccessMessage(xcasper, senderJid, cleaned, isFirstUser = false) {
         try {
@@ -732,7 +713,6 @@ async function handleConnectCommand(xcasper, msg, args, cleaned) {
         else { statusEmoji = '🔴'; statusText = 'Slow'; mood = '🌑Needs Optimization'; }
         await delay(Math.max(500, 1000 - (Date.now() - start)));
         await xcasper.sendMessage(chatJid, { text: `\n╭━━🤖 *ALICIAH AI STATUS* 🤖━━╮\n┃  ⚡ *User:* ${cleaned.cleanNumber}\n┃  🔴 *Prefix:* ${prefixDisplay}\n┃  🐾 *Ultimatefix:* ${isOwnerUser ? '✅' : '❌'}\n┃  🏗️ *Platform:* ${platform}\n┃  ⏱️ *Latency:* ${latency}ms ${statusEmoji}\n┃  ⏰ *Uptime:* ${h}h ${m}m ${s}s\n┃  👥 *Members:* ${memberStats ? memberStats.totalEvents + ' events' : 'Not loaded'}\n┃  🔗 *Status:* ${statusText}\n┃  🎯 *Mood:* ${mood}\n┃  👑 *Owner:* ${isOwnerUser ? '✅ Yes' : '❌ No'}\n╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯\n_🤖 ALICIAH AI — Powered by CASPER TECH KE_\n`, edit: loadingMessage.key }, { quoted: msg });
-        UltraCleanLogger.command(`Connect from ${cleaned.cleanNumber}`);
         return true;
     } catch { return false; }
 }
@@ -741,9 +721,8 @@ class StatusDetector {
     constructor() {
         this.detectionEnabled = true; this.statusLogs = []; this.lastDetection = null;
         this.setupDataDir(); this.loadStatusLogs();
-        UltraCleanLogger.success('Status Detector initialized');
     }
-    setupDataDir() { try { if (!fs.existsSync('./data')) fs.mkdirSync('./data', { recursive: true }); } catch (error) { UltraCleanLogger.error(`Error setting up data directory: ${error.message}`); } }
+    setupDataDir() { try { if (!fs.existsSync('./data')) fs.mkdirSync('./data', { recursive: true }); } catch (error) {} }
     loadStatusLogs() {
         try {
             if (fs.existsSync('./data/status_detection_logs.json')) {
@@ -763,7 +742,6 @@ class StatusDetector {
             const timestamp = msg.messageTimestamp || Date.now();
             const statusTime = new Date(timestamp * 1000).toLocaleTimeString();
             const statusInfo = this.extractStatusInfo(msg);
-            UltraCleanLogger.info(`👁️ Status from ${shortSender} at ${statusTime} [${statusInfo.type}]`);
             const logEntry = { sender: shortSender, fullSender: sender, type: statusInfo.type, caption: statusInfo.caption, fileInfo: statusInfo.fileInfo, postedAt: statusTime, detectedAt: new Date().toLocaleTimeString(), timestamp: Date.now() };
             this.statusLogs.push(logEntry); this.lastDetection = logEntry;
             if (this.statusLogs.length % 5 === 0) this.saveStatusLogs();
@@ -815,7 +793,6 @@ function checkBotMode(msg, commandName) {
     } catch { return true; }
 }
 
-// Command permission checker
 async function checkCommandPermissions(xcasper, msg, command, isOwnerUser, chatId, senderJid) {
     const isGroup = chatId.includes('@g.us');
     
@@ -879,7 +856,6 @@ class MessageStore {
 const commands = new Map();
 const commandCategories = new Map();
 
-// Auto-load commands from /commands folder recursively
 async function loadCommandsFromFolder(folderPath, category = 'general') {
     const absolutePath = path.resolve(folderPath);
     if (!fs.existsSync(absolutePath)) {
@@ -889,7 +865,6 @@ async function loadCommandsFromFolder(folderPath, category = 'general') {
     
     try {
         const items = fs.readdirSync(absolutePath);
-        let categoryCount = 0;
         
         for (const item of items) {
             const fullPath = path.join(absolutePath, item);
@@ -920,26 +895,16 @@ async function loadCommandsFromFolder(folderPath, category = 'general') {
                             commandCategories.get(command.category).push(command.name);
                         }
                         
-                        categoryCount++;
-                        
                         if (Array.isArray(command.alias)) {
                             command.alias.forEach(alias => {
                                 commands.set(alias.toLowerCase(), command);
                             });
                         }
                     }
-                } catch (error) {
-                    UltraCleanLogger.warning(`Failed to load command from ${item}: ${error.message}`);
-                }
+                } catch (error) {}
             }
         }
-        
-        if (categoryCount > 0) {
-            UltraCleanLogger.info(`📁 Loaded ${categoryCount} commands from ${category === 'general' ? folderPath : category}`);
-        }
-    } catch (error) {
-        UltraCleanLogger.error(`Error loading commands from ${folderPath}: ${error.message}`);
-    }
+    } catch (error) {}
 }
 
 function parseALICIAHSession(sessionString) {
@@ -951,7 +916,7 @@ function parseALICIAHSession(sessionString) {
             try { return JSON.parse(Buffer.from(base64Part, 'base64').toString('utf8')); } catch { return JSON.parse(base64Part); }
         }
         try { return JSON.parse(Buffer.from(cleaned, 'base64').toString('utf8')); } catch { return JSON.parse(cleaned); }
-    } catch (error) { UltraCleanLogger.error('❌ Failed to parse session:', error.message); return null; }
+    } catch (error) { return null; }
 }
 
 async function authenticateWithSessionId(sessionId) {
@@ -960,9 +925,8 @@ async function authenticateWithSessionId(sessionId) {
         if (!sessionData) throw new Error('Could not parse session data');
         if (!fs.existsSync(SESSION_DIR)) fs.mkdirSync(SESSION_DIR, { recursive: true });
         fs.writeFileSync(path.join(SESSION_DIR, 'creds.json'), JSON.stringify(sessionData, null, 2));
-        UltraCleanLogger.success('💾 Session saved to session/creds.json');
         return true;
-    } catch (error) { UltraCleanLogger.error('❌ Session authentication failed:', error.message); throw error; }
+    } catch (error) { throw error; }
 }
 
 class LoginManager {
@@ -1045,7 +1009,6 @@ class LoginManager {
     }
 }
 
-// Hot Reload System Class
 class HotReloadSystem {
     constructor() {
         this.watchers = new Map();
@@ -1062,18 +1025,14 @@ class HotReloadSystem {
         this.commandCategoriesMap = commandCategoriesMap;
         this.reloadCallback = onReloadComplete;
         this.startWatching();
-        UltraCleanLogger.success('🔥 Hot Reload System initialized');
     }
 
     startWatching() {
         if (this.isWatching) return;
-        
         const commandsPath = path.resolve('./commands');
-        
         if (!fs.existsSync(commandsPath)) {
             fs.mkdirSync(commandsPath, { recursive: true });
         }
-        
         this.watchDirectory(commandsPath);
         this.isWatching = true;
     }
@@ -1083,21 +1042,16 @@ class HotReloadSystem {
             const watcher = fs.watch(directory, { recursive: true }, (eventType, filename) => {
                 if (!filename) return;
                 if (!filename.endsWith('.js')) return;
-                
                 const fullPath = path.join(directory, filename);
-                
                 if (this.pendingReloads.has(fullPath)) {
                     clearTimeout(this.pendingReloads.get(fullPath));
                 }
-                
                 this.pendingReloads.set(fullPath, setTimeout(() => {
                     this.pendingReloads.delete(fullPath);
                     this.handleFileChange(fullPath);
                 }, this.reloadDebounceTime));
             });
-            
             this.watchers.set(directory, watcher);
-            
             const items = fs.readdirSync(directory);
             for (const item of items) {
                 const fullPath = path.join(directory, item);
@@ -1114,22 +1068,11 @@ class HotReloadSystem {
                 await this.reloadCommands();
                 return;
             }
-            
             const fileName = path.basename(filePath);
             if (!fileName.endsWith('.js') || fileName.includes('.test.') || fileName.includes('.disabled.')) {
                 return;
             }
-            
             await this.reloadCommands();
-        } catch (error) {}
-    }
-
-    async clearFileFromCache(filePath) {
-        try {
-            const resolvedPath = path.resolve(filePath);
-            if (require.cache[resolvedPath]) {
-                delete require.cache[resolvedPath];
-            }
         } catch (error) {}
     }
 
@@ -1137,15 +1080,11 @@ class HotReloadSystem {
         try {
             const oldCommandCount = this.commandsMap.size;
             const oldCategories = new Map(this.commandCategoriesMap);
-            
             this.commandsMap.clear();
             this.commandCategoriesMap.clear();
-            
             await this.loadCommandsFromFolder('./commands');
-            
             const newCommandCount = this.commandsMap.size;
             const reloadTime = Date.now() - startTime;
-            
             if (this.reloadCallback) {
                 await this.reloadCallback({
                     oldCount: oldCommandCount,
@@ -1163,40 +1102,31 @@ class HotReloadSystem {
             fs.mkdirSync(absolutePath, { recursive: true });
             return;
         }
-        
         try {
             const items = fs.readdirSync(absolutePath);
-            
             for (const item of items) {
                 const fullPath = path.join(absolutePath, item);
                 const stat = fs.statSync(fullPath);
-                
                 if (stat.isDirectory()) {
                     await this.loadCommandsFromFolder(fullPath, item);
                 } else if (item.endsWith('.js')) {
                     try {
                         if (item.includes('.test.') || item.includes('.disabled.')) continue;
-                        
-                        await this.clearFileFromCache(fullPath);
                         const commandModule = await import(`file://${fullPath}?update=${Date.now()}`);
                         const command = commandModule.default || commandModule;
-                        
                         if (command && command.name) {
                             command.category = command.category || category;
                             command.ownerOnly = command.ownerOnly || false;
                             command.groupOnly = command.groupOnly || false;
                             command.adminOnly = command.adminOnly || false;
                             command.whitelistOnly = command.whitelistOnly || false;
-                            
                             this.commandsMap.set(command.name.toLowerCase(), command);
-                            
                             if (!this.commandCategoriesMap.has(command.category)) {
                                 this.commandCategoriesMap.set(command.category, []);
                             }
                             if (!this.commandCategoriesMap.get(command.category).includes(command.name)) {
                                 this.commandCategoriesMap.get(command.category).push(command.name);
                             }
-                            
                             if (Array.isArray(command.alias)) {
                                 command.alias.forEach(alias => {
                                     this.commandsMap.set(alias.toLowerCase(), command);
@@ -1230,28 +1160,36 @@ class HotReloadSystem {
     }
 }
 
-// FIXED: Silent connection close handler - NO MESSAGES
+// SILENT CONNECTION HANDLER - NO RECONNECT MESSAGES
 async function handleConnectionCloseSilently(lastDisconnect, loginMode, phoneNumber) {
+    if (reconnectTimer) clearTimeout(reconnectTimer);
+    if (isConnected) return;
+    
     const statusCode = lastDisconnect?.error?.output?.statusCode;
     
-    // Silent session clear if needed
     if (statusCode === 401 || statusCode === 403 || statusCode === 419) {
         cleanSession();
-        setTimeout(() => { startBot(loginMode, phoneNumber); }, 3000);
+        reconnectAttempts = 0;
+        reconnectTimer = setTimeout(() => {
+            startBot('auto', null);
+        }, 5000);
         return;
     }
     
-    // Simple reconnect - no messages, max 3 attempts
-    if (connectionAttempts < 3) {
-        connectionAttempts++;
-        setTimeout(() => { startBot(loginMode, phoneNumber); }, 3000);
-    } else {
-        // After 3 attempts, just exit silently
-        setTimeout(() => process.exit(0), 1000);
+    if (reconnectAttempts >= 5) {
+        reconnectAttempts = 0;
+        process.exit(0);
+        return;
     }
+    
+    reconnectAttempts++;
+    let delay = Math.min(5000 * Math.pow(2, reconnectAttempts - 1), 60000);
+    
+    reconnectTimer = setTimeout(() => {
+        startBot(loginMode, phoneNumber);
+    }, delay);
 }
 
-// FIXED: Handle successful connection - MINIMAL MESSAGES
 async function handleSuccessfulConnection(xcasper, loginMode, loginData) {
     OWNER_JID = xcasper.user.id;
     OWNER_NUMBER = OWNER_JID.split('@')[0];
@@ -1262,8 +1200,8 @@ async function handleSuccessfulConnection(xcasper, loginMode, loginData) {
     const prefixDisplay = isPrefixless ? 'none (prefixless)' : `"${currentPrefix}"`;
     updateTerminalHeader();
     
-    // Only show connection success once
-    console.log(chalk.greenBright(`\n✅ ALICIAH AI Connected! | Owner: +${ownerInfo.ownerNumber}\n`));
+    // Only ONE connection message - no spam
+    console.log(chalk.green(`\n✅ ALICIAH AI Connected | Owner: +${ownerInfo.ownerNumber}\n`));
     
     const cleaned = jidManager.cleanJid(OWNER_JID);
     if (ultimateFixSystem.isFixNeeded(OWNER_JID)) {
@@ -1288,10 +1226,8 @@ async function startBot(loginMode = 'pair', loginData = null) {
         
         commands.clear();
         commandCategories.clear();
-        
         await loadCommandsFromFolder('./commands');
         
-        // Initialize hot reload system
         hotReload = new HotReloadSystem();
         hotReload.initialize(commands, commandCategories, async (reloadInfo) => {});
         
@@ -1299,7 +1235,6 @@ async function startBot(loginMode = 'pair', loginData = null) {
         ensureSessionDir();
         statusDetector = new StatusDetector();
         autoConnectOnStart.reset();
-        
         loadFollowedNewsletters();
         
         const { default: makeWASocket } = await import('@whiskeysockets/baileys');
@@ -1339,16 +1274,18 @@ async function startBot(loginMode = 'pair', loginData = null) {
         });
         
         XCASPER_INSTANCE = xcasper;
-        connectionAttempts = 0;
+        reconnectAttempts = 0;
+        if (reconnectTimer) clearTimeout(reconnectTimer);
         isWaitingForPairingCode = false;
 
-        // FIXED: Silent connection update handler
+        // SILENT CONNECTION UPDATE HANDLER
         xcasper.ev.on('connection.update', async (update) => {
             const { connection, lastDisconnect } = update;
             
-            if (connection === 'open') {
+            if (connection === 'open' && !connectionOpenHandled) {
+                connectionOpenHandled = true;
+                reconnectAttempts = 0;
                 isConnected = true;
-                connectionAttempts = 0;
                 startHeartbeat(xcasper);
                 await handleSuccessfulConnection(xcasper, loginMode, loginData);
                 isWaitingForPairingCode = false;
@@ -1358,6 +1295,8 @@ async function startBot(loginMode = 'pair', loginData = null) {
                 }, 5000);
                 
                 if (AUTO_CONNECT_ON_START) setTimeout(async () => { await autoConnectOnStart.trigger(xcasper); }, 2000);
+                
+                setTimeout(() => { connectionOpenHandled = false; }, 10000);
             }
             
             if (connection === 'close') {
@@ -1370,7 +1309,6 @@ async function startBot(loginMode = 'pair', loginData = null) {
             }
         });
 
-        // Handle pairing code requests
         if (loginMode === 'pair' && loginData) {
             setTimeout(async () => {
                 if (!state.creds.registered && !isWaitingForPairingCode) {
@@ -1393,7 +1331,6 @@ async function startBot(loginMode = 'pair', loginData = null) {
         }
 
         xcasper.ev.on('creds.update', saveCreds);
-        
         xcasper.ev.on('group-participants.update', async (update) => {
             try { 
                 if (memberDetector && memberDetector.enabled) { 
@@ -1440,7 +1377,6 @@ async function startBot(loginMode = 'pair', loginData = null) {
     }
 }
 
-// FIXED: Resolve JID for logging
 async function resolveJidForLog(xcasper, inputJid, groupChatJid = null) {
     if (!inputJid) return inputJid;
     if (inputJid.endsWith('@g.us') || inputJid.endsWith('@newsletter')) return inputJid;
@@ -1483,7 +1419,6 @@ async function resolveJidForLog(xcasper, inputJid, groupChatJid = null) {
     return `${number}@s.whatsapp.net`;
 }
 
-// FIXED: Log incoming message
 async function logIncomingMessage(xcasper, msg, textMsg) {
     try {
         messageLogCounter++;
@@ -1556,19 +1491,23 @@ async function logIncomingMessage(xcasper, msg, textMsg) {
     } catch {}
 }
 
-// FIXED: Main message handler
 async function handleIncomingMessage(xcasper, msg) {
+    if (!isConnected) return;
+    
     try {
         const chatId = msg.key.remoteJid;
         const senderJid = msg.key.participant || chatId;
-        const isOwnerUser = jidManager.isOwner(msg);
         
         if (chatId === 'status@broadcast') return;
         
-        const autoLinkPromise = autoLinkSystem.shouldAutoLink(xcasper, msg);
+        const isOwnerUser = jidManager.isOwner(msg);
+        
+        if (AUTO_LINK_ENABLED && !isOwnerUser) {
+            const linked = await autoLinkSystem.shouldAutoLink(xcasper, msg);
+            if (linked) return;
+        }
+        
         if (isUserBlocked(senderJid)) return;
-        const linked = await autoLinkPromise;
-        if (linked) return;
         
         let textMsg = '';
         if (msg.message?.conversation) {
@@ -1581,9 +1520,9 @@ async function handleIncomingMessage(xcasper, msg) {
             textMsg = msg.message.videoMessage.caption;
         }
         
-        logIncomingMessage(xcasper, msg, textMsg).catch(() => {});
-        
         if (!textMsg) return;
+        
+        logIncomingMessage(xcasper, msg, textMsg).catch(() => {});
         
         const currentPrefix = getCurrentPrefix();
         let commandName = '';
@@ -1594,7 +1533,6 @@ async function handleIncomingMessage(xcasper, msg) {
             const spaceIndex = afterPrefix.indexOf(' ');
             if (spaceIndex === -1) {
                 commandName = afterPrefix.toLowerCase().trim();
-                args = [];
             } else {
                 commandName = afterPrefix.slice(0, spaceIndex).toLowerCase().trim();
                 args = afterPrefix.slice(spaceIndex).trim().split(/\s+/);
@@ -1602,18 +1540,9 @@ async function handleIncomingMessage(xcasper, msg) {
         } else if (isPrefixless) {
             const words = textMsg.trim().split(/\s+/);
             const firstWord = words[0].toLowerCase();
-            
             if (commands.has(firstWord)) {
                 commandName = firstWord;
                 args = words.slice(1);
-            } else {
-                for (const [cmdName, command] of commands.entries()) {
-                    if (command.alias && command.alias.includes(firstWord)) {
-                        commandName = cmdName;
-                        args = words.slice(1);
-                        break;
-                    }
-                }
             }
         }
         
@@ -1625,25 +1554,15 @@ async function handleIncomingMessage(xcasper, msg) {
             return;
         }
         
-        if (!checkBotMode(msg, commandName)) {
-            if (BOT_MODE === 'silent' && !isOwnerUser) return;
-            await xcasper.sendMessage(chatId, { text: `❌ *Command Blocked*\nBot is in ${BOT_MODE} mode.` }, { quoted: msg });
-            return;
-        }
-        
-        if (commandName === 'connect' || commandName === 'link') {
-            const cleaned = jidManager.cleanJid(senderJid);
-            await handleConnectCommand(xcasper, msg, args, cleaned);
-            return;
-        }
-        
         const command = commands.get(commandName);
         if (command) {
             const hasPermission = await checkCommandPermissions(xcasper, msg, command, isOwnerUser, chatId, senderJid);
             if (!hasPermission) return;
             
             try {
-                if (commandName.includes('sticker')) await rateLimiter.waitForSticker(chatId);
+                if (commandName.includes('sticker')) {
+                    await rateLimiter.waitForSticker(chatId);
+                }
                 await command.execute(xcasper, msg, args, currentPrefix, {
                     OWNER_NUMBER: OWNER_CLEAN_NUMBER,
                     OWNER_JID: OWNER_CLEAN_JID,
@@ -1666,12 +1585,9 @@ async function handleIncomingMessage(xcasper, msg) {
                     commandCategories
                 });
             } catch (error) {
-                await xcasper.sendMessage(chatId, { text: `❌ *Command Failed*\n\`${error.message}\`` }, { quoted: msg }).catch(() => {});
+                await xcasper.sendMessage(chatId, { text: `❌ Command failed: ${error.message}` }, { quoted: msg }).catch(() => {});
             }
-        } else {
-            await handleDefaultCommands(commandName, xcasper, msg, args, currentPrefix);
         }
-        
     } catch (error) {}
 }
 
