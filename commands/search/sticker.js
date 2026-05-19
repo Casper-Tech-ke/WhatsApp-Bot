@@ -1,5 +1,5 @@
 // commands/search/sticker.js
-// ALICIAH AI - Sticker Search
+// ALICIAH AI - Sticker Finder
 // Search for animated stickers from GIPHY
 // Powered by CASPER TECH KE
 
@@ -7,8 +7,8 @@ import axios from 'axios';
 import { Sticker, StickerTypes } from 'stickers-formatter';
 
 export default {
-    name: 'sticker',
-    alias: ['stickersearch', 'findsticker', 's'],
+    name: 'sfind',
+    alias: ['sf', 'stickerfind', 'findsticker', 'searchsticker'],
     description: 'Search for animated stickers',
     category: 'search',
     ownerOnly: false,
@@ -18,7 +18,7 @@ export default {
         
         if (!args.length) {
             await xcasper.sendMessage(chatId, { 
-                text: `🎨 *STICKER SEARCH*\n\n📝 *Usage:* ${prefix}sticker [search term]\n💬 *Examples:*\n   • ${prefix}sticker funny cats\n   • ${prefix}s dancing\n\n> sticker  ALICIAH | CASPER TECH`
+                text: `🎨 *STICKER FINDER*\n\n📝 *Usage:* ${prefix}sfind [search term]\n💬 *Examples:*\n   • ${prefix}sfind funny cats\n   • ${prefix}sf dancing\n\n> sfind  ALICIAH | CASPER TECH`
             }, { quoted: msg });
             return;
         }
@@ -27,7 +27,7 @@ export default {
         await xcasper.sendPresenceUpdate('composing', chatId);
         
         const loadingMsg = await xcasper.sendMessage(chatId, { 
-            text: `🎨 *Searching stickers:* "${query}"\n\n> sticker  ALICIAH | CASPER TECH`
+            text: `🎨 *Searching stickers:* "${query}"\n\n> sfind  ALICIAH | CASPER TECH`
         }, { quoted: msg });
         
         try {
@@ -39,7 +39,6 @@ export default {
                 
                 for (const stickerData of stickers) {
                     try {
-                        // Download the GIF
                         const imageResponse = await axios.get(stickerData.url, {
                             responseType: 'arraybuffer',
                             headers: {
@@ -50,7 +49,6 @@ export default {
                         
                         const imageBuffer = Buffer.from(imageResponse.data);
                         
-                        // Convert to sticker using stickers-formatter
                         const sticker = new Sticker(imageBuffer, {
                             pack: 'ALICIAH AI',
                             author: 'CASPER TECH KE',
@@ -64,7 +62,6 @@ export default {
                         await xcasper.sendMessage(chatId, { sticker: stickerBuffer }, { quoted: msg });
                         sentCount++;
                         
-                        // Delay between stickers
                         if (sentCount < stickers.length) {
                             await new Promise(resolve => setTimeout(resolve, 800));
                         }
@@ -77,25 +74,25 @@ export default {
                 
                 if (sentCount > 0) {
                     await xcasper.sendMessage(chatId, {
-                        text: `✅ *Sent ${sentCount} sticker${sentCount > 1 ? 's' : ''} for:* "${query}"\n\n> sticker  ALICIAH | CASPER TECH`,
+                        text: `✅ *Sent ${sentCount} sticker${sentCount > 1 ? 's' : ''} for:* "${query}"\n\n> sfind  ALICIAH | CASPER TECH`,
                         edit: loadingMsg.key
                     });
                 } else {
                     await xcasper.sendMessage(chatId, {
-                        text: `❌ *Failed to convert stickers for:* "${query}"\n\n> sticker  ALICIAH | CASPER TECH`,
+                        text: `❌ *Failed to convert stickers for:* "${query}"\n\n> sfind  ALICIAH | CASPER TECH`,
                         edit: loadingMsg.key
                     });
                 }
             } else {
                 await xcasper.sendMessage(chatId, { 
-                    text: `❌ *No stickers found for:* "${query}"\n\n> sticker  ALICIAH | CASPER TECH`,
+                    text: `❌ *No stickers found for:* "${query}"\n\n> sfind  ALICIAH | CASPER TECH`,
                     edit: loadingMsg.key
                 });
             }
         } catch (error) {
             console.error('Sticker search error:', error);
             await xcasper.sendMessage(chatId, { 
-                text: `❌ *Error:* ${error.message}\n\n> sticker  ALICIAH | CASPER TECH`,
+                text: `❌ *Error:* ${error.message}\n\n> sfind  ALICIAH | CASPER TECH`,
                 edit: loadingMsg.key
             });
         }
