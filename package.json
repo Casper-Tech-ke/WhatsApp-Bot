@@ -11,16 +11,16 @@
   "description": "",
   "dependencies": {
     "@whiskeysockets/baileys": "^7.0.0-rc10",
+    "axios": "*",
     "chalk": "^5.6.2",
     "dotenv": "^17.4.2",
-    "axios": "*",
-    "stickers-formatter": "*",
+    "ffmpeg": "^0.0.4",
     "file-type": "*",
-    "sharp": "*",
-    "wa-sticker-formatter": "*",
-    "ffmpeg": "*",
     "node-webpmux": "*",
-    "qrcode-terminal": "^0.12.0"
+    "qrcode-terminal": "^0.12.0",
+    "sharp": "*",
+    "stickers-formatter": "*",
+    "wa-sticker-formatter": "*"
   },
   "type": "module"
 }

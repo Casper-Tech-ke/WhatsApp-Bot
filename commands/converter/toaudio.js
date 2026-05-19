@@ -4,7 +4,7 @@
 // Powered by CASPER TECH KE
 
 import { downloadMediaMessage } from '@whiskeysockets/baileys';
-import ffmpeg from 'fluent-ffmpeg';
+import ffmpeg from 'ffmpeg';
 import fs from 'fs/promises';
 import { randomBytes } from 'crypto';
 
@@ -73,17 +73,36 @@ export default {
             
             outputFile = randomName('.mp3');
             
-            // Extract audio using ffmpeg
-            await new Promise((resolve, reject) => {
-                ffmpeg(tempFilePath)
-                    .noVideo()
-                    .audioBitrate(128)
-                    .audioFrequency(44100)
-                    .toFormat('mp3')
-                    .on('end', resolve)
-                    .on('error', reject)
-                    .save(outputFile);
-            });
+            // Use ffmpeg package to extract audio
+            try {
+                const video = await new ffmpeg(tempFilePath);
+                
+                // Extract sound to MP3 using built-in function
+                await new Promise((resolve, reject) => {
+                    video.fnExtractSoundToMP3(outputFile, (error, file) => {
+                        if (error) reject(error);
+                        else resolve(file);
+                    });
+                });
+                
+            } catch (ffmpegError) {
+                // Fallback: Manual conversion
+                console.log('Fallback to manual conversion');
+                const process = new ffmpeg(tempFilePath);
+                const video = await process;
+                
+                await new Promise((resolve, reject) => {
+                    video
+                        .setDisableVideo()
+                        .setAudioCodec('libmp3lame')
+                        .setAudioBitRate(128)
+                        .setAudioFrequency(44100)
+                        .save(outputFile, (error, file) => {
+                            if (error) reject(error);
+                            else resolve(file);
+                        });
+                });
+            }
             
             // Read the audio file
             const audioBuffer = await fs.readFile(outputFile);
