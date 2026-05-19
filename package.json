@@ -21,7 +21,8 @@
     "sharp": "*",
     "stickers-formatter": "*",
     "wa-sticker-formatter": "*",
-    "fluent-ffmpeg": "*"
+    "fluent-ffmpeg": "*",
+    "pptxgenjs": "*"
   },
   "type": "module"
 }
