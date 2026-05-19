@@ -8,24 +8,27 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import sharp from 'sharp';
 import path from 'path';
-import { fileURLToPath } from 'url';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const execPromise = promisify(exec);
 
-// Generate random filename
-export const randomFile = (ext) => {
-    const timestamp = Date.now();
-    const random = randomBytes(4).toString('hex');
-    const tempDir = path.join(process.cwd(), 'temp');
-    return path.join(tempDir, `${timestamp}_${random}${ext}`);
-};
-
 // Ensure temp directory exists
-export const ensureTempDir = async () => {
-    const tempDir = path.join(process.cwd(), 'temp');
-    await fs.mkdir(tempDir, { recursive: true });
-    return tempDir;
+const TEMP_DIR = path.join(process.cwd(), 'temp');
+
+async function ensureTempDir() {
+    try {
+        await fs.access(TEMP_DIR);
+    } catch {
+        await fs.mkdir(TEMP_DIR, { recursive: true });
+    }
+    return TEMP_DIR;
+}
+
+// Generate random filename
+export const randomFile = async (ext) => {
+    await ensureTempDir();
+    const timestamp = Date.now();
+    const random = randomBytes(8).toString('hex');
+    return path.join(TEMP_DIR, `${timestamp}_${random}${ext}`);
 };
 
 // Get video duration
@@ -59,8 +62,8 @@ export const stickerToImage = async (stickerBuffer) => {
 // Video to Audio (MP3)
 export const videoToAudio = async (videoBuffer) => {
     await ensureTempDir();
-    const inputFile = randomFile('.mp4');
-    const outputFile = randomFile('.mp3');
+    const inputFile = await randomFile('.mp4');
+    const outputFile = await randomFile('.mp3');
     
     await fs.writeFile(inputFile, videoBuffer);
     await execPromise(`ffmpeg -i "${inputFile}" -q:a 0 -map a "${outputFile}" -y`);
@@ -75,8 +78,8 @@ export const videoToAudio = async (videoBuffer) => {
 // Audio to Voice Note (PTT)
 export const audioToPTT = async (audioBuffer) => {
     await ensureTempDir();
-    const inputFile = randomFile('.mp3');
-    const outputFile = randomFile('.opus');
+    const inputFile = await randomFile('.mp3');
+    const outputFile = await randomFile('.opus');
     
     await fs.writeFile(inputFile, audioBuffer);
     await execPromise(`ffmpeg -i "${inputFile}" -c:a libopus -b:a 16k -ar 16000 -ac 1 "${outputFile}" -y`);
@@ -91,8 +94,8 @@ export const audioToPTT = async (audioBuffer) => {
 // Audio to Video (Black Screen)
 export const audioToVideo = async (audioBuffer) => {
     await ensureTempDir();
-    const inputFile = randomFile('.mp3');
-    const outputFile = randomFile('.mp4');
+    const inputFile = await randomFile('.mp3');
+    const outputFile = await randomFile('.mp4');
     
     await fs.writeFile(inputFile, audioBuffer);
     await execPromise(`ffmpeg -f lavfi -i color=c=black:s=1280x720 -i "${inputFile}" -shortest -c:v libx264 -c:a aac -pix_fmt yuv420p "${outputFile}" -y`);
@@ -112,11 +115,12 @@ export const downloadMedia = async (url) => {
 
 // Download and save media message
 export const downloadAndSaveMedia = async (mediaMsg) => {
+    await ensureTempDir();
     const url = mediaMsg.url;
     if (!url) throw new Error('No media URL found');
     
     const buffer = await downloadMedia(url);
-    const tempFile = randomFile('.tmp');
+    const tempFile = await randomFile('.tmp');
     await fs.writeFile(tempFile, buffer);
     
     return tempFile;
@@ -132,9 +136,6 @@ export const formatBytes = (bytes) => {
 
 // Sleep/Delay
 export const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-
-// Random string
-export const randomString = (length = 8) => randomBytes(length).toString('hex');
 
 // Clean up temp files
 export const cleanup = async (filePaths) => {
