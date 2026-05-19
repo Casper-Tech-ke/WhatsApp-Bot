@@ -43,15 +43,10 @@ export default {
                     const stickerData = stickers[i];
                     
                     try {
-                        // Download the GIF with proper headers to avoid 403
+                        // Download the GIF
                         const imageResponse = await axios.get(stickerData.url, {
                             responseType: 'arraybuffer',
-                            timeout: 15000,
-                            headers: {
-                                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                                'Referer': 'https://giphy.com/',
-                                'Accept': 'image/webp,image/gif,image/*,*/*'
-                            }
+                            timeout: 15000
                         });
                         
                         const imageBuffer = Buffer.from(imageResponse.data);
