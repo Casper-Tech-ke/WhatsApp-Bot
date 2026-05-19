@@ -1,4 +1,4 @@
-// commands/converter/toppt.js
+// commands/converter/topowerpoint.js
 // ALICIAH AI - Text to PowerPoint
 // Convert text into .pptx presentation
 // Powered by CASPER TECH KE
@@ -15,8 +15,8 @@ function parseSlides(text) {
 }
 
 export default {
-    name: 'toppt',
-    alias: ['topptx', 'txt2ppt', 'makeppt', 'makeslides'],
+    name: 'topowerpoint',
+    alias: ['toppt', 'topptx', 'txt2ppt', 'makeppt', 'makeslides'],
     description: 'Convert text into a PowerPoint (.pptx) presentation',
     category: 'converter',
     ownerOnly: false,
@@ -24,14 +24,13 @@ export default {
     async execute(xcasper, msg, args, prefix, context) {
         const chatId = msg.key.remoteJid;
         
-        // Get quoted text or direct args
         const quoted = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
         const quotedText = quoted?.conversation || quoted?.extendedTextMessage?.text;
         const inputText = args.join(' ').trim() || quotedText?.trim();
         
         if (!inputText) {
             await xcasper.sendMessage(chatId, { 
-                text: `📊 *TEXT TO POWERPOINT*\n\n📝 *Usage:*\n   • ${prefix}toppt [your text]\n   • Or reply to a text message\n\n📋 *Format:*\nSlide 1 Title\nFirst bullet\nSecond bullet\n---\nSlide 2 Title\nAnother bullet\n\n> toppt  ALICIAH | CASPER TECH`
+                text: `📊 *TEXT TO POWERPOINT*\n\n📝 *Usage:*\n   • ${prefix}topowerpoint [your text]\n   • ${prefix}toppt [your text]\n   • Or reply to a text message\n\n📋 *Format:*\nSlide 1 Title\nFirst bullet\nSecond bullet\n---\nSlide 2 Title\nAnother bullet\n\n> topowerpoint  ALICIAH | CASPER TECH`
             }, { quoted: msg });
             return;
         }
@@ -39,7 +38,7 @@ export default {
         await xcasper.sendPresenceUpdate('composing', chatId);
         
         const loadingMsg = await xcasper.sendMessage(chatId, { 
-            text: `📊 *Creating PowerPoint...*\n\n> toppt  ALICIAH | CASPER TECH`
+            text: `📊 *Creating PowerPoint...*\n\n> topowerpoint  ALICIAH | CASPER TECH`
         }, { quoted: msg });
         
         try {
@@ -64,13 +63,11 @@ export default {
                 const slide = prs.addSlide();
                 slide.background = { color: bgColor };
                 
-                // Header bar
                 slide.addShape(prs.ShapeType.rect, {
                     x: 0, y: 0, w: '100%', h: 1.2,
                     fill: { color: accentColor }
                 });
                 
-                // Title
                 slide.addText(title, {
                     x: 0.4, y: 0.1, w: '90%', h: 1.0,
                     fontSize: 28,
@@ -80,7 +77,6 @@ export default {
                     valign: 'middle'
                 });
                 
-                // Slide number
                 slide.addText(`${idx + 1} / ${slides.length}`, {
                     x: '88%', y: 0.1, w: '10%', h: 1.0,
                     fontSize: 11,
@@ -89,7 +85,6 @@ export default {
                     valign: 'middle'
                 });
                 
-                // Bullets
                 if (bullets.length > 0) {
                     const bulletObjs = bullets.map(b => ({
                         text: b,
@@ -109,7 +104,6 @@ export default {
                     });
                 }
                 
-                // Footer
                 slide.addText('ALICIAH AI', {
                     x: 0, y: '92%', w: '100%', h: 0.35,
                     fontSize: 9,
@@ -125,18 +119,18 @@ export default {
                 document: buffer,
                 mimetype: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
                 fileName: `ALICIAH_AI_${Date.now()}.pptx`,
-                caption: `✅ *PowerPoint created!*\n\n📊 *Slides:* ${slides.length}\n💾 *Size:* ${(buffer.byteLength / 1024).toFixed(1)} KB\n\n> toppt  ALICIAH | CASPER TECH`
+                caption: `✅ *PowerPoint created!*\n\n📊 *Slides:* ${slides.length}\n💾 *Size:* ${(buffer.byteLength / 1024).toFixed(1)} KB\n\n> topowerpoint  ALICIAH | CASPER TECH`
             }, { quoted: msg });
             
             await xcasper.sendMessage(chatId, {
-                text: `✅ *Presentation ready!*\n\n> toppt  ALICIAH | CASPER TECH`,
+                text: `✅ *Presentation ready!*\n\n> topowerpoint  ALICIAH | CASPER TECH`,
                 edit: loadingMsg.key
             });
             
         } catch (error) {
-            console.error('Toppt error:', error);
+            console.error('Topowerpoint error:', error);
             await xcasper.sendMessage(chatId, { 
-                text: `❌ *Failed:* ${error.message}\n\nMake sure your text follows the format:\nTitle\n- bullet\n- bullet\n---\nNext slide title\n\n> toppt  ALICIAH | CASPER TECH`,
+                text: `❌ *Failed:* ${error.message}\n\nMake sure your text follows the format:\nTitle\n- bullet\n- bullet\n---\nNext slide title\n\n> topowerpoint  ALICIAH | CASPER TECH`,
                 edit: loadingMsg.key
             });
         }
