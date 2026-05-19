@@ -4,7 +4,7 @@
 // Powered by CASPER TECH KE
 
 import fs from 'fs/promises';
-import { downloadAndSaveMediaMessage, toPtt } from '../../utils/gift-utils.js';
+import { downloadAndSaveMedia, audioToPTT, cleanup } from '../../utils/alicia-utils.js';
 
 export default {
     name: 'toptt',
@@ -16,12 +16,13 @@ export default {
     async execute(xcasper, msg, args, prefix, context) {
         const chatId = msg.key.remoteJid;
         
+        // Get quoted message
         const quoted = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
         const quotedAudio = quoted?.audioMessage;
         
         if (!quotedAudio) {
             await xcasper.sendMessage(chatId, { 
-                text: `🎙️ *AUDIO TO VOICE NOTE*\n\n📝 *Usage:* Reply to an audio with: ${prefix}toptt\n\n> toptt  ALICIAH | CASPER TECH`
+                text: `🎙️ *AUDIO TO VOICE NOTE*\n\n📝 *Usage:* Reply to an audio message with:\n   • ${prefix}toptt\n   • ${prefix}tovoice\n   • ${prefix}tovn\n\n> toptt  ALICIAH | CASPER TECH`
             }, { quoted: msg });
             return;
         }
@@ -29,35 +30,47 @@ export default {
         await xcasper.sendPresenceUpdate('composing', chatId);
         
         const loadingMsg = await xcasper.sendMessage(chatId, { 
-            text: `🎙️ *Converting to voice note...*\n\n> toptt  ALICIAH | CASPER TECH`
+            text: `🎙️ *Converting to voice note...*\n\nPlease wait...\n\n> toptt  ALICIAH | CASPER TECH`
         }, { quoted: msg });
         
-        let tempFilePath = null;
+        let tempFile = null;
         
         try {
-            tempFilePath = await downloadAndSaveMediaMessage(quotedAudio);
-            const buffer = await fs.readFile(tempFilePath);
-            const convertedBuffer = await toPtt(buffer);
+            // Download the audio
+            tempFile = await downloadAndSaveMedia(quotedAudio);
+            const audioBuffer = await fs.readFile(tempFile);
             
+            // Convert to voice note
+            const pttBuffer = await audioToPTT(audioBuffer);
+            
+            // Send as voice note
             await xcasper.sendMessage(chatId, {
-                audio: convertedBuffer,
+                audio: pttBuffer,
                 mimetype: 'audio/ogg; codecs=opus',
                 ptt: true
             }, { quoted: msg });
             
-            await fs.unlink(tempFilePath).catch(() => {});
+            // Cleanup
+            await cleanup([tempFile]);
             
             await xcasper.sendMessage(chatId, {
-                text: `✅ *Voice note created!*\n\n> toptt  ALICIAH | CASPER TECH`,
+                text: `✅ *Voice note ready!*\n\n> toptt  ALICIAH | CASPER TECH`,
                 edit: loadingMsg.key
             });
             
         } catch (error) {
-            if (tempFilePath) await fs.unlink(tempFilePath).catch(() => {});
-            await xcasper.sendMessage(chatId, { 
-                text: `❌ *Failed:* ${error.message}\n\n> toptt  ALICIAH | CASPER TECH`,
-                edit: loadingMsg.key
-            });
+            console.error('Toptt error:', error);
+            if (tempFile) await cleanup([tempFile]);
+            
+            let errorMsg = "❌ *Conversion failed*\n\n";
+            if (error.message.includes('ffmpeg')) {
+                errorMsg += "FFmpeg is not installed. Please install it first.";
+            } else {
+                errorMsg += error.message;
+            }
+            errorMsg += `\n\n> toptt  ALICIAH | CASPER TECH`;
+            
+            await xcasper.sendMessage(chatId, { text: errorMsg, edit: loadingMsg.key });
         }
     }
 };
