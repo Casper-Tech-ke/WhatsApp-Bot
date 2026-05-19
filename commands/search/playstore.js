@@ -6,7 +6,7 @@ import axios from 'axios';
 
 export default {
     name: 'playstore',
-    alias: ['play', 'googleplay', 'app'],
+    alias: ['ps', 'googleplay', 'app'],
     description: 'Search for apps on Google Play Store',
     category: 'search',
     ownerOnly: false,
