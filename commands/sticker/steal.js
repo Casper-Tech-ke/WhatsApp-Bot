@@ -1,10 +1,9 @@
 // commands/sticker/steal.js
-// ALICIAH AI - Steal Sticker (Raw Error Display)
+// ALICIAH AI - Steal Sticker
 // Powered by CASPER TECH KE
 
 import axios from 'axios';
 import { Sticker } from 'wa-sticker-formatter';
-import sharp from 'sharp';
 
 export default {
     name: 'steal',
@@ -39,31 +38,30 @@ export default {
             if (args.length > 0) packName = args[0].replace(/["']/g, '');
             if (args.length > 1) author = args.slice(1).join(' ').replace(/["']/g, '');
             
-            const response = await axios.get(quotedSticker.url, { responseType: 'arraybuffer' });
+            // Download with proper headers
+            const response = await axios.get(quotedSticker.url, { 
+                responseType: 'arraybuffer',
+                timeout: 30000,
+                headers: {
+                    'User-Agent': 'WhatsApp/2.23.16.78',
+                    'Accept': 'image/webp,image/*,*/*'
+                }
+            });
+            
             let stickerBuffer = Buffer.from(response.data);
             
-            const processedBuffer = await sharp(stickerBuffer).webp({ quality: 90 }).toBuffer();
-            
-            const sticker = new Sticker(processedBuffer, {
+            // Skip sharp completely - use wa-sticker-formatter directly
+            const sticker = new Sticker(stickerBuffer, {
                 pack: packName,
                 author: author,
                 type: 'full',
+                categories: ['🎨'],
                 quality: 90
             });
             
             const newStickerBuffer = await sticker.toBuffer();
             
-            // Try to send and catch the exact WhatsApp/ Baileys error
-            try {
-                await xcasper.sendMessage(chatId, { sticker: newStickerBuffer }, { quoted: msg });
-            } catch (sendError) {
-                // This is the RAW Baileys/WhatsApp error
-                await xcasper.sendMessage(chatId, { 
-                    text: `❌ *RAW WHATSAPP ERROR*\n\n\`\`\`${JSON.stringify(sendError, null, 2)}\`\`\`\n\n> steal  ALICIAH | CASPER TECH`,
-                    edit: loadingMsg.key
-                });
-                return;
-            }
+            await xcasper.sendMessage(chatId, { sticker: newStickerBuffer }, { quoted: msg });
             
             await xcasper.sendMessage(chatId, {
                 text: `✅ *Sticker stolen!*\n\n📦 *Pack:* ${packName}\n👤 *Author:* ${author}\n\n> steal  ALICIAH | CASPER TECH`,
@@ -71,9 +69,9 @@ export default {
             });
             
         } catch (error) {
-            // Show the error that happened during processing
+            console.error('Steal error:', error);
             await xcasper.sendMessage(chatId, { 
-                text: `❌ *PROCESSING ERROR*\n\n\`\`\`${error.message}\`\`\`\n\n${error.stack || ''}\n\n> steal  ALICIAH | CASPER TECH`,
+                text: `❌ *Error:* ${error.message}\n\n> steal  ALICIAH | CASPER TECH`,
                 edit: loadingMsg.key
             });
         }
