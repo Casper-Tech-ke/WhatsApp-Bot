@@ -1,91 +1,147 @@
 // commands/sticker/steal.js
 // ALICIAH AI - Steal Sticker
+// Take any sticker and add custom metadata
 // Powered by CASPER TECH KE
 
-import axios from 'axios';
-import { Sticker } from 'wa-sticker-formatter';
-import fs from 'fs/promises';
-import { randomBytes } from 'crypto';
-
-const randomName = (ext) => randomBytes(8).toString('hex') + ext;
+import { downloadMediaMessage } from '@whiskeysockets/baileys';
+import webp from 'node-webpmux';
+import crypto from 'crypto';
 
 export default {
     name: 'steal',
-    alias: ['take', 'clone', 'snatch'],
-    description: 'Steal a sticker and change its pack name/author',
+    alias: ['take', 'clone', 'snatch', 'copysticker'],
+    description: 'Steal a sticker and add custom pack name/emoji',
     category: 'sticker',
     ownerOnly: false,
     
     async execute(xcasper, msg, args, prefix, context) {
         const chatId = msg.key.remoteJid;
         
-        const quoted = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
-        const quotedSticker = quoted?.stickerMessage;
-        
-        if (!quotedSticker || !quotedSticker.url) {
-            await xcasper.sendMessage(chatId, { 
-                text: `❌ Please reply to a sticker\n\n> steal  ALICIAH | CASPER TECH`
-            }, { quoted: msg });
-            return;
-        }
-        
-        await xcasper.sendPresenceUpdate('composing', chatId);
-        
-        const loadingMsg = await xcasper.sendMessage(chatId, { 
-            text: `🎨 *Stealing sticker...*\n\n> steal  ALICIAH | CASPER TECH`
-        }, { quoted: msg });
-        
-        let tempFile = null;
+        const sendMessage = async (text) => {
+            return await xcasper.sendMessage(chatId, { text }, { quoted: msg });
+        };
         
         try {
+            // Get pushname (user's display name)
+            const pushname = msg.pushName || msg.sender?.split('@')[0] || "User";
+            
+            // Check if message is a reply to a sticker
+            const quotedMessage = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
+            
+            if (!quotedMessage?.stickerMessage) {
+                // Alternative check: check msg.quoted
+                if (!msg.quoted?.message?.stickerMessage) {
+                    return await sendMessage("❌ *Reply to a sticker first!*\n\nReply to any sticker with .steal to copy it\n\n*Example:* Reply to sticker with: .steal 😎\n\nOr with custom pack: .steal MyPack MyName");
+                }
+            }
+            
+            // Get the actual quoted message
+            const stickerMessage = quotedMessage?.stickerMessage || msg.quoted?.message?.stickerMessage;
+            
+            if (!stickerMessage) {
+                return await sendMessage("❌ *That's not a sticker!*\n\nPlease reply to a sticker message.");
+            }
+            
+            // Parse args for emoji, pack name, author
+            let emoji = '🤖';
             let packName = 'ALICIAH AI';
             let author = 'CASPER TECH KE';
             
-            if (args.length > 0) packName = args[0].replace(/["']/g, '');
-            if (args.length > 1) author = args.slice(1).join(' ').replace(/["']/g, '');
+            if (args.length > 0) {
+                // Check if first arg is an emoji
+                const emojiRegex = /[\u{1F600}-\u{1F6FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]/u;
+                if (emojiRegex.test(args[0])) {
+                    emoji = args[0];
+                    if (args.length > 1) packName = args[1];
+                    if (args.length > 2) author = args.slice(2).join(' ');
+                } else {
+                    packName = args[0];
+                    if (args.length > 1) author = args.slice(1).join(' ');
+                }
+            }
             
-            // Download the sticker
-            const response = await axios.get(quotedSticker.url, { 
-                responseType: 'arraybuffer',
-                timeout: 30000
-            });
+            // Send processing message
+            await sendMessage(`📦 *Processing Sticker*\n\n✨ Pack: *${packName}*\n👤 By: ${author}\n🎭 Emoji: ${emoji}\n⏳ Please wait...`);
             
-            const stickerBuffer = Buffer.from(response.data);
-            
-            // Save to temp file
-            tempFile = randomName('.webp');
-            await fs.writeFile(tempFile, stickerBuffer);
-            
-            // Create sticker from file path
-            const sticker = new Sticker(tempFile, {
-                pack: packName,
-                author: author,
-                type: 'full',
-                categories: ['🎨'],
-                quality: 90
-            });
-            
-            const newStickerBuffer = await sticker.toBuffer();
-            
-            // Clean up temp file
-            await fs.unlink(tempFile).catch(() => {});
-            
-            await xcasper.sendMessage(chatId, { sticker: newStickerBuffer }, { quoted: msg });
-            
-            await xcasper.sendMessage(chatId, {
-                text: `✅ *Sticker stolen!*\n\n📦 *Pack:* ${packName}\n👤 *Author:* ${author}\n\n> steal  ALICIAH | CASPER TECH`,
-                edit: loadingMsg.key
-            });
+            try {
+                // Get the message key for download
+                const messageKey = msg.quoted?.key || {
+                    remoteJid: chatId,
+                    id: msg.message?.extendedTextMessage?.contextInfo?.stanzaId || msg.key.id,
+                    participant: msg.sender
+                };
+                
+                // Download the sticker using Baileys method
+                const stickerBuffer = await downloadMediaMessage(
+                    {
+                        key: messageKey,
+                        message: { stickerMessage },
+                        messageType: 'stickerMessage'
+                    },
+                    'buffer',
+                    {},
+                    {
+                        logger: console,
+                        reuploadRequest: xcasper.updateMediaMessage
+                    }
+                );
+                
+                if (!stickerBuffer) {
+                    return await sendMessage("❌ Failed to download sticker\n\n💡 The sticker might be too large or corrupted.");
+                }
+                
+                // Add metadata using webpmux
+                const img = new webp.Image();
+                await img.load(stickerBuffer);
+                
+                // Create metadata
+                const json = {
+                    'sticker-pack-id': crypto.randomBytes(32).toString('hex'),
+                    'sticker-pack-name': packName,
+                    'sticker-pack-publisher': author,
+                    'emojis': [emoji]
+                };
+                
+                // Create exif buffer
+                const exifAttr = Buffer.from([0x49, 0x49, 0x2A, 0x00, 0x08, 0x00, 0x00, 0x00, 0x01, 0x00, 0x41, 0x57, 0x07, 0x00, 0x00, 0x00, 0x00, 0x00, 0x16, 0x00, 0x00, 0x00]);
+                const jsonBuffer = Buffer.from(JSON.stringify(json), 'utf8');
+                const exif = Buffer.concat([exifAttr, jsonBuffer]);
+                exif.writeUIntLE(jsonBuffer.length, 14, 4);
+                
+                img.exif = exif;
+                
+                const finalBuffer = await img.save(null);
+                
+                await xcasper.sendMessage(chatId, {
+                    sticker: finalBuffer
+                }, { quoted: msg });
+                
+                // Send success message
+                await sendMessage(`✅ *Sticker Stolen Successfully!*\n\n📦 Pack: ${packName}\n👤 By: ${author}\n🎭 Emoji: ${emoji}\n\n💡 The sticker now shows under "${packName}" pack`);
+                
+            } catch (error) {
+                console.error('Sticker processing error:', error);
+                
+                let errorMsg = "❌ *Sticker Processing Error*\n\n";
+                if (error.message.includes('webp') || error.message.includes('Image')) {
+                    errorMsg += "Invalid sticker format or corrupted sticker.\n";
+                    errorMsg += "Try with a different sticker.\n";
+                } else if (error.message.includes('download')) {
+                    errorMsg += "Failed to download sticker.\n";
+                    errorMsg += "The sticker might be too large.\n";
+                } else {
+                    errorMsg += `Error: ${error.message}\n`;
+                }
+                
+                errorMsg += "\n📌 *Requirements:*\n";
+                errorMsg += "• Sticker must be WebP format\n";
+                
+                await sendMessage(errorMsg);
+            }
             
         } catch (error) {
-            // Clean up temp file
-            if (tempFile) await fs.unlink(tempFile).catch(() => {});
-            
-            console.error('Steal error:', error);
-            await xcasper.sendMessage(chatId, { 
-                text: `❌ *Error:* ${error.message}\n\n> steal  ALICIAH | CASPER TECH`,
-                edit: loadingMsg.key
-            });
+            console.error('Error in steal command:', error);
+            await sendMessage(`❌ Command Error: ${error.message}\n\nTry sending the command again.`);
         }
     }
 };

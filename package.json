@@ -19,6 +19,7 @@
     "sharp": "*",
     "wa-sticker-formatter": "*",
     "ffmpeg": "*",
+    "node-webpmux": "*",
     "qrcode-terminal": "^0.12.0"
   },
   "type": "module"
