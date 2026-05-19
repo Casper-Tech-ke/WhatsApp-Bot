@@ -6,10 +6,11 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { randomBytes } from 'crypto';
-import { exec } from 'child_process';
-import { promisify } from 'util';
+import ffmpeg from 'fluent-ffmpeg';
+import ffmpegPath from 'ffmpeg-static';
 
-const execPromise = promisify(exec);
+ffmpeg.setFfmpegPath(ffmpegPath);
+
 const randomName = (ext) => {
     const tempDir = path.join(process.cwd(), 'temp');
     return path.join(tempDir, `${Date.now()}_${randomBytes(4).toString('hex')}${ext}`);
@@ -41,15 +42,12 @@ export default {
             text: `🎙️ *Converting to voice note...*\n\n> toptt  ALICIAH | CASPER TECH`
         }, { quoted: msg });
         
-        let tempDir = path.join(process.cwd(), 'temp');
         let inputFile = null;
         let outputFile = null;
         
         try {
-            // Create temp directory
-            await fs.mkdir(tempDir, { recursive: true });
+            await fs.mkdir(path.join(process.cwd(), 'temp'), { recursive: true });
             
-            // Download audio
             const response = await fetch(quotedAudio.url);
             const audioBuffer = Buffer.from(await response.arrayBuffer());
             
@@ -58,8 +56,18 @@ export default {
             
             await fs.writeFile(inputFile, audioBuffer);
             
-            // Convert with ignore errors and force re-encode
-            await execPromise(`ffmpeg -err_detect ignore_err -i "${inputFile}" -c:a libopus -b:a 16k -ar 16000 -ac 1 "${outputFile}" -y`);
+            // Convert to opus for voice note
+            await new Promise((resolve, reject) => {
+                ffmpeg(inputFile)
+                    .output(outputFile)
+                    .audioCodec('libopus')
+                    .audioBitrate(16)
+                    .audioFrequency(16000)
+                    .audioChannels(1)
+                    .on('end', resolve)
+                    .on('error', reject)
+                    .run();
+            });
             
             const pttBuffer = await fs.readFile(outputFile);
             
@@ -69,7 +77,6 @@ export default {
                 ptt: true
             }, { quoted: msg });
             
-            // Cleanup
             await fs.unlink(inputFile).catch(() => {});
             await fs.unlink(outputFile).catch(() => {});
             
@@ -84,7 +91,7 @@ export default {
             if (outputFile) await fs.unlink(outputFile).catch(() => {});
             
             await xcasper.sendMessage(chatId, { 
-                text: `❌ *Failed:* ${error.message}\n\nThe audio format may not be supported.\n\n> toptt  ALICIAH | CASPER TECH`,
+                text: `❌ *Failed:* ${error.message}\n\n> toptt  ALICIAH | CASPER TECH`,
                 edit: loadingMsg.key
             });
         }

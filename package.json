@@ -22,7 +22,9 @@
     "stickers-formatter": "*",
     "wa-sticker-formatter": "*",
     "fluent-ffmpeg": "*",
-    "pptxgenjs": "*"
+    "pptxgenjs": "*",
+    "@ffmpeg/ffmpeg": "*",
+    "gifencoder": "*"
   },
   "type": "module"
 }
