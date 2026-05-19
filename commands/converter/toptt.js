@@ -4,7 +4,16 @@
 // Powered by CASPER TECH KE
 
 import fs from 'fs/promises';
-import { downloadAndSaveMedia, audioToPTT, cleanup } from '../../utils/alicia-utils.js';
+import path from 'path';
+import { randomBytes } from 'crypto';
+import { exec } from 'child_process';
+import { promisify } from 'util';
+
+const execPromise = promisify(exec);
+const randomName = (ext) => {
+    const tempDir = path.join(process.cwd(), 'temp');
+    return path.join(tempDir, `${Date.now()}_${randomBytes(4).toString('hex')}${ext}`);
+};
 
 export default {
     name: 'toptt',
@@ -16,13 +25,12 @@ export default {
     async execute(xcasper, msg, args, prefix, context) {
         const chatId = msg.key.remoteJid;
         
-        // Get quoted message
         const quoted = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
         const quotedAudio = quoted?.audioMessage;
         
         if (!quotedAudio) {
             await xcasper.sendMessage(chatId, { 
-                text: `🎙️ *AUDIO TO VOICE NOTE*\n\n📝 *Usage:* Reply to an audio message with:\n   • ${prefix}toptt\n   • ${prefix}tovoice\n   • ${prefix}tovn\n\n> toptt  ALICIAH | CASPER TECH`
+                text: `🎙️ *AUDIO TO VOICE NOTE*\n\n📝 *Usage:* Reply to an audio with: ${prefix}toptt\n\n> toptt  ALICIAH | CASPER TECH`
             }, { quoted: msg });
             return;
         }
@@ -30,20 +38,31 @@ export default {
         await xcasper.sendPresenceUpdate('composing', chatId);
         
         const loadingMsg = await xcasper.sendMessage(chatId, { 
-            text: `🎙️ *Converting to voice note...*\n\nPlease wait...\n\n> toptt  ALICIAH | CASPER TECH`
+            text: `🎙️ *Converting to voice note...*\n\n> toptt  ALICIAH | CASPER TECH`
         }, { quoted: msg });
         
-        let tempFile = null;
+        let tempDir = path.join(process.cwd(), 'temp');
+        let inputFile = null;
+        let outputFile = null;
         
         try {
-            // Download the audio
-            tempFile = await downloadAndSaveMedia(quotedAudio);
-            const audioBuffer = await fs.readFile(tempFile);
+            // Create temp directory
+            await fs.mkdir(tempDir, { recursive: true });
             
-            // Convert to voice note
-            const pttBuffer = await audioToPTT(audioBuffer);
+            // Download audio
+            const response = await fetch(quotedAudio.url);
+            const audioBuffer = Buffer.from(await response.arrayBuffer());
             
-            // Send as voice note
+            inputFile = randomName('.mp3');
+            outputFile = randomName('.opus');
+            
+            await fs.writeFile(inputFile, audioBuffer);
+            
+            // Convert to opus for voice note
+            await execPromise(`ffmpeg -i "${inputFile}" -c:a libopus -b:a 16k -ar 16000 -ac 1 "${outputFile}" -y`);
+            
+            const pttBuffer = await fs.readFile(outputFile);
+            
             await xcasper.sendMessage(chatId, {
                 audio: pttBuffer,
                 mimetype: 'audio/ogg; codecs=opus',
@@ -51,7 +70,8 @@ export default {
             }, { quoted: msg });
             
             // Cleanup
-            await cleanup([tempFile]);
+            await fs.unlink(inputFile).catch(() => {});
+            await fs.unlink(outputFile).catch(() => {});
             
             await xcasper.sendMessage(chatId, {
                 text: `✅ *Voice note ready!*\n\n> toptt  ALICIAH | CASPER TECH`,
@@ -60,17 +80,13 @@ export default {
             
         } catch (error) {
             console.error('Toptt error:', error);
-            if (tempFile) await cleanup([tempFile]);
+            if (inputFile) await fs.unlink(inputFile).catch(() => {});
+            if (outputFile) await fs.unlink(outputFile).catch(() => {});
             
-            let errorMsg = "❌ *Conversion failed*\n\n";
-            if (error.message.includes('ffmpeg')) {
-                errorMsg += "FFmpeg is not installed. Please install it first.";
-            } else {
-                errorMsg += error.message;
-            }
-            errorMsg += `\n\n> toptt  ALICIAH | CASPER TECH`;
-            
-            await xcasper.sendMessage(chatId, { text: errorMsg, edit: loadingMsg.key });
+            await xcasper.sendMessage(chatId, { 
+                text: `❌ *Failed:* ${error.message}\n\nMake sure ffmpeg is installed.\n\n> toptt  ALICIAH | CASPER TECH`,
+                edit: loadingMsg.key
+            });
         }
     }
 };
