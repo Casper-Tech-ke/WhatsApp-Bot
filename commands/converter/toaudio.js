@@ -4,7 +4,7 @@
 // Powered by CASPER TECH KE
 
 import { downloadMediaMessage } from '@whiskeysockets/baileys';
-import ffmpeg from 'ffmpeg';
+import ffmpeg from 'fluent-ffmpeg';
 import fs from 'fs/promises';
 import { randomBytes } from 'crypto';
 
@@ -20,13 +20,12 @@ export default {
     async execute(xcasper, msg, args, prefix, context) {
         const chatId = msg.key.remoteJid;
         
-        // Check if replying to a video
         const quoted = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
         const quotedVideo = quoted?.videoMessage;
         
         if (!quotedVideo) {
             await xcasper.sendMessage(chatId, { 
-                text: `🎵 *VIDEO TO AUDIO*\n\n📝 *Usage:* Reply to a video message with:\n   • ${prefix}toaudio\n   • ${prefix}tomp3\n\n> toaudio  ALICIAH | CASPER TECH`
+                text: `🎵 *VIDEO TO AUDIO*\n\n📝 *Usage:* Reply to a video with: ${prefix}toaudio\n\n> toaudio  ALICIAH | CASPER TECH`
             }, { quoted: msg });
             return;
         }
@@ -34,21 +33,19 @@ export default {
         await xcasper.sendPresenceUpdate('composing', chatId);
         
         const loadingMsg = await xcasper.sendMessage(chatId, { 
-            text: `🎵 *Converting video to audio...*\n\nPlease wait...\n\n> toaudio  ALICIAH | CASPER TECH`
+            text: `🎵 *Converting video to audio...*\n\n> toaudio  ALICIAH | CASPER TECH`
         }, { quoted: msg });
         
         let tempFilePath = null;
         let outputFile = null;
         
         try {
-            // Get message key for download
             const messageKey = msg.quoted?.key || {
                 remoteJid: chatId,
                 id: msg.message?.extendedTextMessage?.contextInfo?.stanzaId || msg.key.id,
                 participant: msg.sender
             };
             
-            // Download the video
             const videoBuffer = await downloadMediaMessage(
                 {
                     key: messageKey,
@@ -63,82 +60,49 @@ export default {
                 }
             );
             
-            if (!videoBuffer) {
-                throw new Error('Failed to download video');
-            }
+            if (!videoBuffer) throw new Error('Failed to download video');
             
-            // Save video to temp file
             tempFilePath = randomName('.mp4');
             await fs.writeFile(tempFilePath, videoBuffer);
             
             outputFile = randomName('.mp3');
             
-            // Use ffmpeg package to extract audio
-            try {
-                const video = await new ffmpeg(tempFilePath);
-                
-                // Extract sound to MP3 using built-in function
-                await new Promise((resolve, reject) => {
-                    video.fnExtractSoundToMP3(outputFile, (error, file) => {
-                        if (error) reject(error);
-                        else resolve(file);
-                    });
-                });
-                
-            } catch (ffmpegError) {
-                // Fallback: Manual conversion
-                console.log('Fallback to manual conversion');
-                const process = new ffmpeg(tempFilePath);
-                const video = await process;
-                
-                await new Promise((resolve, reject) => {
-                    video
-                        .setDisableVideo()
-                        .setAudioCodec('libmp3lame')
-                        .setAudioBitRate(128)
-                        .setAudioFrequency(44100)
-                        .save(outputFile, (error, file) => {
-                            if (error) reject(error);
-                            else resolve(file);
-                        });
-                });
-            }
+            // Convert using fluent-ffmpeg
+            await new Promise((resolve, reject) => {
+                ffmpeg(tempFilePath)
+                    .output(outputFile)
+                    .noVideo()
+                    .audioCodec('libmp3lame')
+                    .audioBitrate(128)
+                    .on('end', resolve)
+                    .on('error', reject)
+                    .run();
+            });
             
-            // Read the audio file
             const audioBuffer = await fs.readFile(outputFile);
             
-            // Send audio
             await xcasper.sendMessage(chatId, {
                 audio: audioBuffer,
                 mimetype: 'audio/mpeg',
                 caption: `🎵 *Converted Audio*\n\n> toaudio  ALICIAH | CASPER TECH`
             }, { quoted: msg });
             
-            // Clean up
             await fs.unlink(tempFilePath).catch(() => {});
             await fs.unlink(outputFile).catch(() => {});
             
             await xcasper.sendMessage(chatId, {
-                text: `✅ *Audio extracted successfully!*\n\n> toaudio  ALICIAH | CASPER TECH`,
+                text: `✅ *Audio extracted!*\n\n> toaudio  ALICIAH | CASPER TECH`,
                 edit: loadingMsg.key
             });
             
         } catch (error) {
-            console.error('ToAudio error:', error);
-            
-            // Clean up
             if (tempFilePath) await fs.unlink(tempFilePath).catch(() => {});
             if (outputFile) await fs.unlink(outputFile).catch(() => {});
             
-            let errorMsg = "❌ *Failed to extract audio*\n\n";
-            if (error.message.includes('no audio')) {
-                errorMsg += "This video has no audio track.";
-            } else {
-                errorMsg += error.message;
-            }
-            errorMsg += `\n\n> toaudio  ALICIAH | CASPER TECH`;
-            
-            await xcasper.sendMessage(chatId, { text: errorMsg, edit: loadingMsg.key });
+            await xcasper.sendMessage(chatId, { 
+                text: `❌ *Failed:* ${error.message}\n\n> toaudio  ALICIAH | CASPER TECH`,
+                edit: loadingMsg.key
+            });
         }
     }
 };
