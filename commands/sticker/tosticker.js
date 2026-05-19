@@ -1,40 +1,32 @@
 // commands/sticker/tosticker.js
-// ALICIAH AI - Convert Image/Video to Sticker
+// ALICIAH AI - Convert Image to Sticker
 // Powered by CASPER TECH KE
 
 import axios from 'axios';
 import sharp from 'sharp';
+import { fileTypeFromBuffer } from 'file-type';
 
 export default {
     name: 'tosticker',
     alias: ['sticker', 's', 'stickerfy'],
-    description: 'Convert image or video to WhatsApp sticker',
+    description: 'Convert image to WhatsApp sticker',
     category: 'sticker',
     ownerOnly: false,
     
     async execute(xcasper, msg, args, prefix, context) {
         const chatId = msg.key.remoteJid;
         
-        // Check for image or video in message or quoted message
+        // Get image from quoted message or direct message
         let mediaMsg = null;
-        let isVideo = false;
         
         // Direct message
         if (msg.message?.imageMessage) {
             mediaMsg = msg.message.imageMessage;
-            isVideo = false;
-        } else if (msg.message?.videoMessage) {
-            mediaMsg = msg.message.videoMessage;
-            isVideo = true;
         } else {
             // Quoted message
             const quoted = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
             if (quoted?.imageMessage) {
                 mediaMsg = quoted.imageMessage;
-                isVideo = false;
-            } else if (quoted?.videoMessage) {
-                mediaMsg = quoted.videoMessage;
-                isVideo = true;
             }
         }
         
@@ -52,42 +44,43 @@ export default {
         }, { quoted: msg });
         
         try {
-            // Download media
+            // Download the image
             const response = await axios.get(mediaMsg.url, { 
                 responseType: 'arraybuffer',
                 timeout: 30000
             });
-            let mediaBuffer = Buffer.from(response.data);
             
-            if (!mediaBuffer || mediaBuffer.length === 0) {
+            let imageBuffer = Buffer.from(response.data);
+            
+            if (!imageBuffer || imageBuffer.length === 0) {
                 throw new Error('Downloaded file is empty');
             }
             
-            // Process image with sharp
-            let processedBuffer;
+            // Detect file type
+            const fileType = await fileTypeFromBuffer(imageBuffer);
+            console.log('Detected file type:', fileType);
             
-            if (isVideo) {
-                // For videos, use as-is (stickers-formatter will handle)
-                processedBuffer = mediaBuffer;
-            } else {
-                // Process image with sharp
-                const image = sharp(mediaBuffer);
-                const metadata = await image.metadata();
+            // If it's a WebP sticker, convert it directly
+            if (fileType?.mime === 'image/webp') {
+                // Just resize and send as sticker
+                const webpBuffer = await sharp(imageBuffer)
+                    .resize(512, 512, { fit: 'contain', background: '#ffffff' })
+                    .webp({ quality: 90 })
+                    .toBuffer();
                 
-                // Resize to 512x512 (WhatsApp sticker standard)
-                processedBuffer = await image
-                    .resize(512, 512, {
-                        fit: 'contain',
+                await xcasper.sendMessage(chatId, { sticker: webpBuffer }, { quoted: msg });
+            } else {
+                // Convert regular image to WebP sticker
+                const stickerBuffer = await sharp(imageBuffer)
+                    .resize(512, 512, { 
+                        fit: 'contain', 
                         background: { r: 255, g: 255, b: 255, alpha: 1 }
                     })
-                    .webp({ quality: 80 })
+                    .webp({ quality: 85 })
                     .toBuffer();
+                
+                await xcasper.sendMessage(chatId, { sticker: stickerBuffer }, { quoted: msg });
             }
-            
-            // Send as sticker
-            await xcasper.sendMessage(chatId, {
-                sticker: processedBuffer
-            }, { quoted: msg });
             
             await xcasper.sendMessage(chatId, {
                 text: `✅ *Sticker created!*\n\n> tosticker  ALICIAH | CASPER TECH`,
@@ -95,9 +88,9 @@ export default {
             });
             
         } catch (error) {
-            console.error('Sticker conversion error:', error.message);
+            console.error('Sticker conversion error:', error);
             await xcasper.sendMessage(chatId, { 
-                text: `❌ *Conversion failed*\n\n${error.message}\n\nTry sending a different image.\n\n> tosticker  ALICIAH | CASPER TECH`,
+                text: `❌ *Conversion failed*\n\n${error.message}\n\nMake sure you reply to a valid image (JPEG, PNG, or WebP).\n\n> tosticker  ALICIAH | CASPER TECH`,
                 edit: loadingMsg.key
             });
         }
