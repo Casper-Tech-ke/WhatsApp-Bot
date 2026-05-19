@@ -21,44 +21,43 @@ export default {
     async execute(xcasper, msg, args, prefix, context) {
         const chatId = msg.key.remoteJid;
         
-        // Get quoted message
         const quoted = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
         const quotedAudio = quoted?.audioMessage;
         
         if (!quotedAudio) {
             await xcasper.sendMessage(chatId, { 
-                text: `🎙️ *AUDIO TO VOICE NOTE*\n\n📝 *Usage:* Reply to an audio message with:\n   • ${prefix}toptt\n   • ${prefix}tovoice\n   • ${prefix}tovn\n\n> toptt  ALICIAH | CASPER TECH`
+                text: `🎙️ *AUDIO TO VOICE NOTE*\n\n📝 *Usage:* Reply to an audio message with: ${prefix}toptt\n\n> toptt  ALICIAH | CASPER TECH`
             }, { quoted: msg });
             return;
         }
         
-        // Send acknowledgment
         await xcasper.sendMessage(chatId, { 
             text: `🎙️ *Converting to voice note...*\n\nPlease wait...\n\n> toptt  ALICIAH | CASPER TECH`
         }, { quoted: msg });
         
         let tempFilePath = null;
         let outputFile = null;
+        let wavFile = null;
         
         try {
             // Download audio
             const response = await fetch(quotedAudio.url);
             const audioBuffer = Buffer.from(await response.arrayBuffer());
             
-            // Save temp file
             tempFilePath = randomName('.mp3');
             await fs.writeFile(tempFilePath, audioBuffer);
             
+            wavFile = randomName('.wav');
             outputFile = randomName('.opus');
             
-            // Convert to opus for voice note
-            // FFmpeg command: convert to opus, 16kbps, 16kHz, mono
-            await execPromise(`ffmpeg -i "${tempFilePath}" -c:a libopus -b:a 16k -ar 16000 -ac 1 "${outputFile}" -y`);
+            // First convert to WAV to fix header issues, then to opus
+            await execPromise(`ffmpeg -i "${tempFilePath}" -acodec pcm_s16le -ar 16000 -ac 1 "${wavFile}" -y`);
             
-            // Read converted file
+            // Then convert WAV to opus for voice note
+            await execPromise(`ffmpeg -i "${wavFile}" -c:a libopus -b:a 16k -ar 16000 -ac 1 "${outputFile}" -y`);
+            
             const pttBuffer = await fs.readFile(outputFile);
             
-            // Send as voice note
             await xcasper.sendMessage(chatId, {
                 audio: pttBuffer,
                 mimetype: 'audio/ogg; codecs=opus',
@@ -67,16 +66,24 @@ export default {
             
             // Cleanup
             await fs.unlink(tempFilePath).catch(() => {});
+            await fs.unlink(wavFile).catch(() => {});
             await fs.unlink(outputFile).catch(() => {});
             
         } catch (error) {
             console.error('Toptt error:', error);
             if (tempFilePath) await fs.unlink(tempFilePath).catch(() => {});
+            if (wavFile) await fs.unlink(wavFile).catch(() => {});
             if (outputFile) await fs.unlink(outputFile).catch(() => {});
             
-            await xcasper.sendMessage(chatId, { 
-                text: `❌ *Failed:* ${error.message}\n\nMake sure ffmpeg is installed.\n\n> toptt  ALICIAH | CASPER TECH`
-            }, { quoted: msg });
+            let errorMsg = "❌ *Failed to convert to voice note*\n\n";
+            if (error.message.includes('Header missing')) {
+                errorMsg += "The audio format is not supported. Try a different audio file.";
+            } else {
+                errorMsg += error.message;
+            }
+            errorMsg += `\n\n> toptt  ALICIAH | CASPER TECH`;
+            
+            await xcasper.sendMessage(chatId, { text: errorMsg }, { quoted: msg });
         }
     }
 };
