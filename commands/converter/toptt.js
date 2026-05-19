@@ -58,8 +58,8 @@ export default {
             
             await fs.writeFile(inputFile, audioBuffer);
             
-            // Convert to opus for voice note
-            await execPromise(`ffmpeg -i "${inputFile}" -c:a libopus -b:a 16k -ar 16000 -ac 1 "${outputFile}" -y`);
+            // Convert with ignore errors and force re-encode
+            await execPromise(`ffmpeg -err_detect ignore_err -i "${inputFile}" -c:a libopus -b:a 16k -ar 16000 -ac 1 "${outputFile}" -y`);
             
             const pttBuffer = await fs.readFile(outputFile);
             
@@ -84,7 +84,7 @@ export default {
             if (outputFile) await fs.unlink(outputFile).catch(() => {});
             
             await xcasper.sendMessage(chatId, { 
-                text: `❌ *Failed:* ${error.message}\n\nMake sure ffmpeg is installed.\n\n> toptt  ALICIAH | CASPER TECH`,
+                text: `❌ *Failed:* ${error.message}\n\nThe audio format may not be supported.\n\n> toptt  ALICIAH | CASPER TECH`,
                 edit: loadingMsg.key
             });
         }
