@@ -1,37 +1,82 @@
 // commands/converter/toptt.js
-// ALICIAH AI - Audio to Voice Note (Simple Test)
+// ALICIAH AI - Audio to Voice Note
+// Convert audio to WhatsApp voice note (PTT)
 // Powered by CASPER TECH KE
+
+import fs from 'fs/promises';
+import { randomBytes } from 'crypto';
+import { exec } from 'child_process';
+import { promisify } from 'util';
+
+const execPromise = promisify(exec);
+const randomName = (ext) => randomBytes(8).toString('hex') + ext;
 
 export default {
     name: 'toptt',
-    alias: ['testvoice'],
-    description: 'Convert audio to voice note',
+    alias: ['tovoice', 'tovn', 'tovoicenote'],
+    description: 'Convert audio to WhatsApp voice note',
     category: 'converter',
     ownerOnly: false,
     
     async execute(xcasper, msg, args, prefix, context) {
         const chatId = msg.key.remoteJid;
         
-        console.log('=== TOPTT COMMAND TRIGGERED ===');
-        
-        // Send a simple response to confirm command works
-        await xcasper.sendMessage(chatId, { 
-            text: `✅ *toptt command is working!*\n\nNow testing with actual audio conversion...\n\n> toptt  ALICIAH | CASPER TECH`
-        }, { quoted: msg });
-        
-        // Check if replying to an audio
+        // Get quoted message
         const quoted = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
         const quotedAudio = quoted?.audioMessage;
         
         if (!quotedAudio) {
             await xcasper.sendMessage(chatId, { 
-                text: `⚠️ *No audio found*\n\nPlease reply to an audio message.\n\n> toptt  ALICIAH | CASPER TECH`
+                text: `🎙️ *AUDIO TO VOICE NOTE*\n\n📝 *Usage:* Reply to an audio message with:\n   • ${prefix}toptt\n   • ${prefix}tovoice\n   • ${prefix}tovn\n\n> toptt  ALICIAH | CASPER TECH`
             }, { quoted: msg });
             return;
         }
         
+        // Send acknowledgment
         await xcasper.sendMessage(chatId, { 
-            text: `🎙️ *Found audio!*\n\nNow converting to voice note...\n\n> toptt  ALICIAH | CASPER TECH`
+            text: `🎙️ *Converting to voice note...*\n\nPlease wait...\n\n> toptt  ALICIAH | CASPER TECH`
         }, { quoted: msg });
+        
+        let tempFilePath = null;
+        let outputFile = null;
+        
+        try {
+            // Download audio
+            const response = await fetch(quotedAudio.url);
+            const audioBuffer = Buffer.from(await response.arrayBuffer());
+            
+            // Save temp file
+            tempFilePath = randomName('.mp3');
+            await fs.writeFile(tempFilePath, audioBuffer);
+            
+            outputFile = randomName('.opus');
+            
+            // Convert to opus for voice note
+            // FFmpeg command: convert to opus, 16kbps, 16kHz, mono
+            await execPromise(`ffmpeg -i "${tempFilePath}" -c:a libopus -b:a 16k -ar 16000 -ac 1 "${outputFile}" -y`);
+            
+            // Read converted file
+            const pttBuffer = await fs.readFile(outputFile);
+            
+            // Send as voice note
+            await xcasper.sendMessage(chatId, {
+                audio: pttBuffer,
+                mimetype: 'audio/ogg; codecs=opus',
+                ptt: true
+            }, { quoted: msg });
+            
+            // Cleanup
+            await fs.unlink(tempFilePath).catch(() => {});
+            await fs.unlink(outputFile).catch(() => {});
+            
+        } catch (error) {
+            console.error('Toptt error:', error);
+            if (tempFilePath) await fs.unlink(tempFilePath).catch(() => {});
+            if (outputFile) await fs.unlink(outputFile).catch(() => {});
+            
+            await xcasper.sendMessage(chatId, { 
+                text: `❌ *Failed:* ${error.message}\n\nMake sure ffmpeg is installed.\n\n> toptt  ALICIAH | CASPER TECH`
+            }, { quoted: msg });
+        }
     }
 };
