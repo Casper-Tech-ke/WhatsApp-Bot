@@ -4,6 +4,10 @@
 
 import axios from 'axios';
 import { Sticker } from 'wa-sticker-formatter';
+import fs from 'fs/promises';
+import { randomBytes } from 'crypto';
+
+const randomName = (ext) => randomBytes(8).toString('hex') + ext;
 
 export default {
     name: 'steal',
@@ -31,6 +35,8 @@ export default {
             text: `🎨 *Stealing sticker...*\n\n> steal  ALICIAH | CASPER TECH`
         }, { quoted: msg });
         
+        let tempFile = null;
+        
         try {
             let packName = 'ALICIAH AI';
             let author = 'CASPER TECH KE';
@@ -38,20 +44,20 @@ export default {
             if (args.length > 0) packName = args[0].replace(/["']/g, '');
             if (args.length > 1) author = args.slice(1).join(' ').replace(/["']/g, '');
             
-            // Download with proper headers
+            // Download the sticker
             const response = await axios.get(quotedSticker.url, { 
                 responseType: 'arraybuffer',
-                timeout: 30000,
-                headers: {
-                    'User-Agent': 'WhatsApp/2.23.16.78',
-                    'Accept': 'image/webp,image/*,*/*'
-                }
+                timeout: 30000
             });
             
-            let stickerBuffer = Buffer.from(response.data);
+            const stickerBuffer = Buffer.from(response.data);
             
-            // Skip sharp completely - use wa-sticker-formatter directly
-            const sticker = new Sticker(stickerBuffer, {
+            // Save to temp file
+            tempFile = randomName('.webp');
+            await fs.writeFile(tempFile, stickerBuffer);
+            
+            // Create sticker from file path
+            const sticker = new Sticker(tempFile, {
                 pack: packName,
                 author: author,
                 type: 'full',
@@ -61,6 +67,9 @@ export default {
             
             const newStickerBuffer = await sticker.toBuffer();
             
+            // Clean up temp file
+            await fs.unlink(tempFile).catch(() => {});
+            
             await xcasper.sendMessage(chatId, { sticker: newStickerBuffer }, { quoted: msg });
             
             await xcasper.sendMessage(chatId, {
@@ -69,6 +78,9 @@ export default {
             });
             
         } catch (error) {
+            // Clean up temp file
+            if (tempFile) await fs.unlink(tempFile).catch(() => {});
+            
             console.error('Steal error:', error);
             await xcasper.sendMessage(chatId, { 
                 text: `❌ *Error:* ${error.message}\n\n> steal  ALICIAH | CASPER TECH`,
