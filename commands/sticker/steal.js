@@ -1,12 +1,10 @@
 // commands/sticker/steal.js
-// ALICIAH AI - Steal Sticker (Debug Version)
+// ALICIAH AI - Steal Sticker (Raw Error Display)
 // Powered by CASPER TECH KE
 
 import axios from 'axios';
 import { Sticker } from 'wa-sticker-formatter';
 import sharp from 'sharp';
-import fs from 'fs/promises';
-import { fileTypeFromBuffer } from 'file-type';
 
 export default {
     name: 'steal',
@@ -21,14 +19,9 @@ export default {
         const quoted = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
         const quotedSticker = quoted?.stickerMessage;
         
-        console.log('=== STEAL COMMAND DEBUG ===');
-        console.log('Quoted message:', quoted ? 'Yes' : 'No');
-        console.log('Quoted sticker:', quotedSticker ? 'Yes' : 'No');
-        console.log('Sticker URL:', quotedSticker?.url ? quotedSticker.url.substring(0, 100) : 'No URL');
-        
         if (!quotedSticker || !quotedSticker.url) {
             await xcasper.sendMessage(chatId, { 
-                text: `🎨 *STEAL STICKER*\n\n📝 *Usage:* Reply to any sticker with:\n   • ${prefix}steal\n   • ${prefix}steal "My Pack" "My Name"\n\n> steal  ALICIAH | CASPER TECH`
+                text: `❌ Please reply to a sticker\n\n> steal  ALICIAH | CASPER TECH`
             }, { quoted: msg });
             return;
         }
@@ -46,69 +39,41 @@ export default {
             if (args.length > 0) packName = args[0].replace(/["']/g, '');
             if (args.length > 1) author = args.slice(1).join(' ').replace(/["']/g, '');
             
-            console.log('Pack name:', packName);
-            console.log('Author:', author);
-            console.log('Downloading from URL:', quotedSticker.url);
-            
-            // Download the sticker
-            const response = await axios.get(quotedSticker.url, { 
-                responseType: 'arraybuffer',
-                timeout: 30000
-            });
-            
-            console.log('Downloaded size:', response.data.length, 'bytes');
-            
+            const response = await axios.get(quotedSticker.url, { responseType: 'arraybuffer' });
             let stickerBuffer = Buffer.from(response.data);
             
-            // Check file type
-            const fileType = await fileTypeFromBuffer(stickerBuffer);
-            console.log('File type detected:', fileType);
+            const processedBuffer = await sharp(stickerBuffer).webp({ quality: 90 }).toBuffer();
             
-            // Save raw downloaded file for inspection
-            await fs.writeFile('/tmp/steal-raw.webp', stickerBuffer);
-            console.log('Saved raw file to /tmp/steal-raw.webp');
-            
-            // Try sharp processing
-            console.log('Processing with sharp...');
-            const processedBuffer = await sharp(stickerBuffer)
-                .webp({ quality: 90 })
-                .toBuffer();
-            
-            console.log('Sharp output size:', processedBuffer.length, 'bytes');
-            await fs.writeFile('/tmp/steal-sharp.webp', processedBuffer);
-            console.log('Saved sharp file to /tmp/steal-sharp.webp');
-            
-            // Create sticker with wa-sticker-formatter
-            console.log('Creating sticker with wa-sticker-formatter...');
             const sticker = new Sticker(processedBuffer, {
                 pack: packName,
                 author: author,
                 type: 'full',
-                categories: ['🎨'],
                 quality: 90
             });
             
             const newStickerBuffer = await sticker.toBuffer();
-            console.log('Final sticker size:', newStickerBuffer.length, 'bytes');
             
-            await xcasper.sendMessage(chatId, { sticker: newStickerBuffer }, { quoted: msg });
+            // Try to send and catch the exact WhatsApp/ Baileys error
+            try {
+                await xcasper.sendMessage(chatId, { sticker: newStickerBuffer }, { quoted: msg });
+            } catch (sendError) {
+                // This is the RAW Baileys/WhatsApp error
+                await xcasper.sendMessage(chatId, { 
+                    text: `❌ *RAW WHATSAPP ERROR*\n\n\`\`\`${JSON.stringify(sendError, null, 2)}\`\`\`\n\n> steal  ALICIAH | CASPER TECH`,
+                    edit: loadingMsg.key
+                });
+                return;
+            }
             
             await xcasper.sendMessage(chatId, {
                 text: `✅ *Sticker stolen!*\n\n📦 *Pack:* ${packName}\n👤 *Author:* ${author}\n\n> steal  ALICIAH | CASPER TECH`,
                 edit: loadingMsg.key
             });
             
-            console.log('=== STEAL SUCCESS ===');
-            
         } catch (error) {
-            console.error('=== STEAL ERROR ===');
-            console.error('Error name:', error.name);
-            console.error('Error message:', error.message);
-            console.error('Error stack:', error.stack);
-            
-            // Send error details to chat for debugging
+            // Show the error that happened during processing
             await xcasper.sendMessage(chatId, { 
-                text: `❌ *Steal failed*\n\nError: ${error.message}\n\nCheck console for details.\n\n> steal  ALICIAH | CASPER TECH`,
+                text: `❌ *PROCESSING ERROR*\n\n\`\`\`${error.message}\`\`\`\n\n${error.stack || ''}\n\n> steal  ALICIAH | CASPER TECH`,
                 edit: loadingMsg.key
             });
         }
