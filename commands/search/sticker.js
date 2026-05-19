@@ -1,13 +1,15 @@
 // commands/search/sticker.js
 // ALICIAH AI - Sticker Search
-// Find and send animated stickers - Powered by CASPER TECH KE
+// Find and convert GIFs to WhatsApp stickers using stickers-formatter
+// Powered by CASPER TECH KE
 
 import axios from 'axios';
+import { Sticker, StickerTypes } from 'stickers-formatter';
 
 export default {
     name: 'sticker',
     alias: ['stickersearch', 'findsticker', 's'],
-    description: 'Search for animated stickers/GIFs',
+    description: 'Search for animated stickers and convert to WhatsApp stickers',
     category: 'search',
     ownerOnly: false,
     
@@ -16,7 +18,7 @@ export default {
         
         if (!args.length) {
             await xcasper.sendMessage(chatId, { 
-                text: `🎨 *STICKER SEARCH*\n\n📝 *Usage:* ${prefix}sticker [search term]\n💬 *Examples:*\n   • ${prefix}sticker funny cats\n   • ${prefix}s dancing\n   • ${prefix}stickersearch hello\n\n✨ *Features:*\n   • Animated GIF stickers\n   • Can be added to WhatsApp\n   • High-quality stickers\n\n> sticker  ALICIAH | CASPER TECH`
+                text: `🎨 *STICKER SEARCH*\n\n📝 *Usage:* ${prefix}sticker [search term]\n💬 *Examples:*\n   • ${prefix}sticker funny cats\n   • ${prefix}s dancing\n\n> sticker  ALICIAH | CASPER TECH`
             }, { quoted: msg });
             return;
         }
@@ -25,7 +27,7 @@ export default {
         await xcasper.sendPresenceUpdate('composing', chatId);
         
         const loadingMsg = await xcasper.sendMessage(chatId, { 
-            text: `🎨 *Searching stickers for:* "${query}"\n\nPlease wait...\n\n> sticker  ALICIAH | CASPER TECH`
+            text: `🎨 *Searching stickers:* "${query}"\n\nConverting to WhatsApp stickers...\n\n> sticker  ALICIAH | CASPER TECH`
         }, { quoted: msg });
         
         try {
@@ -34,51 +36,83 @@ export default {
             });
             
             if (response.data && response.data.success && response.data.results && response.data.results.length > 0) {
-                const stickers = response.data.results.slice(0, 8);
-                let resultText = `🎨 *Sticker Search:* "${query}"\n📊 *Found:* ${response.data.total || stickers.length} stickers\n━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+                const stickers = response.data.results.slice(0, 5);
+                let sentCount = 0;
                 
-                // Send each sticker
                 for (let i = 0; i < stickers.length; i++) {
-                    const sticker = stickers[i];
-                    const caption = `🎨 *Sticker ${i+1}/${stickers.length}*\n📝 *${sticker.title || 'Sticker'}*\n${sticker.author ? `👤 *By:* ${sticker.author}\n` : ''}\n\n> sticker  ALICIAH | CASPER TECH`;
+                    const stickerData = stickers[i];
                     
                     try {
-                        // Try to send as sticker (if supported)
-                        await xcasper.sendMessage(chatId, {
-                            sticker: { url: sticker.url },
-                            caption: caption
-                        }, { quoted: msg });
+                        // Download the GIF
+                        const imageResponse = await axios.get(stickerData.url, {
+                            responseType: 'arraybuffer',
+                            timeout: 15000
+                        });
+                        
+                        const imageBuffer = Buffer.from(imageResponse.data);
+                        
+                        // Create sticker using the class
+                        const sticker = new Sticker(imageBuffer, {
+                            pack: 'ALICIAH AI',
+                            author: 'CASPER TECH KE',
+                            type: StickerTypes.DEFAULT,
+                            categories: ['🎨'],
+                            quality: 80
+                        });
+                        
+                        // Get the message object (as shown in README)
+                        const stickerMessage = await sticker.toMessage();
+                        
+                        // Send using the message object
+                        await xcasper.sendMessage(chatId, stickerMessage, { quoted: msg });
+                        
+                        sentCount++;
+                        
+                        // Delay between stickers
+                        if (i < stickers.length - 1) {
+                            await new Promise(resolve => setTimeout(resolve, 800));
+                        }
+                        
                     } catch (stickerError) {
-                        // Fallback to sending as GIF
-                        await xcasper.sendMessage(chatId, {
-                            video: { url: sticker.url },
-                            gifPlayback: true,
-                            caption: caption
-                        }, { quoted: msg });
-                    }
-                    
-                    // Small delay between stickers
-                    if (i < stickers.length - 1) {
-                        await new Promise(resolve => setTimeout(resolve, 500));
+                        console.error(`Sticker ${i + 1} error:`, stickerError.message);
+                        
+                        // Fallback: send as GIF
+                        try {
+                            await xcasper.sendMessage(chatId, {
+                                video: { url: stickerData.url },
+                                gifPlayback: true,
+                                caption: `🎨 *${stickerData.title || 'Sticker'}*\n\n> sticker  ALICIAH | CASPER TECH`
+                            }, { quoted: msg });
+                            sentCount++;
+                        } catch (gifError) {
+                            console.error(`GIF fallback error:`, gifError.message);
+                        }
                     }
                 }
                 
                 // Update loading message
-                await xcasper.sendMessage(chatId, {
-                    text: `✅ *Complete!* Found and sent ${stickers.length} stickers for "${query}"\n\n💡 *Tip:* Tap and hold to save to WhatsApp\n\n> sticker  ALICIAH | CASPER TECH`,
-                    edit: loadingMsg.key
-                });
+                if (sentCount > 0) {
+                    await xcasper.sendMessage(chatId, {
+                        text: `✅ *Done!* Sent ${sentCount} sticker${sentCount > 1 ? 's' : ''} for "${query}"\n\n> sticker  ALICIAH | CASPER TECH`,
+                        edit: loadingMsg.key
+                    });
+                } else {
+                    await xcasper.sendMessage(chatId, {
+                        text: `❌ *Failed* Could not convert stickers for "${query}"\n\n> sticker  ALICIAH | CASPER TECH`,
+                        edit: loadingMsg.key
+                    });
+                }
                 
             } else {
                 await xcasper.sendMessage(chatId, { 
-                    text: `❌ *No stickers found*\n\nNo stickers found for: "${query}"\n\n💡 *Tips:*\n• Try different keywords\n• Use simpler terms\n• Try: ${prefix}sticker [emoji/word]\n\n> sticker  ALICIAH | CASPER TECH`,
+                    text: `❌ *No stickers found* for "${query}"\n\n> sticker  ALICIAH | CASPER TECH`,
                     edit: loadingMsg.key
                 });
             }
         } catch (error) {
-            console.error('Sticker Search API Error:', error.message);
+            console.error('Sticker Search Error:', error.message);
             await xcasper.sendMessage(chatId, { 
-                text: `❌ *Error searching stickers*\n\n${error.message}\n\nPlease try again later.\n\n> sticker  ALICIAH | CASPER TECH`,
+                text: `❌ *Error:* ${error.message}\n\n> sticker  ALICIAH | CASPER TECH`,
                 edit: loadingMsg.key
             });
         }

@@ -73,6 +73,7 @@ import path from 'path';
 import dotenv from 'dotenv';
 import chalk from 'chalk';
 import readline from 'readline';
+import axios from 'axios';
 
 dotenv.config({ path: './.env' });
 
@@ -319,6 +320,153 @@ let reconnectTimer = null;
 let connectionOpenHandled = false;
 
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+// ============ HELPER FUNCTIONS FOR MEDIA HANDLING ============
+
+/**
+ * Get quoted message from the original message
+ * @param {Object} msg - The WhatsApp message object
+ * @returns {Object|null} The quoted message or null
+ */
+function getQuotedMessage(msg) {
+    try {
+        const quoted = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
+        if (quoted) return quoted;
+        return null;
+    } catch (error) {
+        return null;
+    }
+}
+
+/**
+ * Check if a message contains a sticker
+ * @param {Object} msg - The WhatsApp message object
+ * @returns {boolean} True if message contains a sticker
+ */
+function isStickerMessage(msg) {
+    try {
+        if (msg.message?.stickerMessage) return true;
+        const quoted = getQuotedMessage(msg);
+        if (quoted?.stickerMessage) return true;
+        return false;
+    } catch (error) {
+        return false;
+    }
+}
+
+/**
+ * Check if a message contains an image
+ * @param {Object} msg - The WhatsApp message object
+ * @returns {boolean} True if message contains an image
+ */
+function isImageMessage(msg) {
+    try {
+        if (msg.message?.imageMessage) return true;
+        const quoted = getQuotedMessage(msg);
+        if (quoted?.imageMessage) return true;
+        return false;
+    } catch (error) {
+        return false;
+    }
+}
+
+/**
+ * Check if a message contains a video
+ * @param {Object} msg - The WhatsApp message object
+ * @returns {boolean} True if message contains a video
+ */
+function isVideoMessage(msg) {
+    try {
+        if (msg.message?.videoMessage) return true;
+        const quoted = getQuotedMessage(msg);
+        if (quoted?.videoMessage) return true;
+        return false;
+    } catch (error) {
+        return false;
+    }
+}
+
+/**
+ * Get the media message (image, video, or sticker) from a WhatsApp message
+ * @param {Object} msg - The WhatsApp message object
+ * @returns {Object|null} The media message object or null
+ */
+function getMediaMessage(msg) {
+    try {
+        // Check direct message first
+        if (msg.message?.imageMessage) return msg.message.imageMessage;
+        if (msg.message?.videoMessage) return msg.message.videoMessage;
+        if (msg.message?.stickerMessage) return msg.message.stickerMessage;
+        
+        // Check quoted message
+        const quoted = getQuotedMessage(msg);
+        if (quoted?.imageMessage) return quoted.imageMessage;
+        if (quoted?.videoMessage) return quoted.videoMessage;
+        if (quoted?.stickerMessage) return quoted.stickerMessage;
+        
+        return null;
+    } catch (error) {
+        return null;
+    }
+}
+
+/**
+ * Get the direct URL of a media message
+ * @param {Object} mediaMsg - The media message object
+ * @returns {string|null} The media URL or null
+ */
+function getMediaUrl(mediaMsg) {
+    try {
+        if (!mediaMsg) return null;
+        if (mediaMsg.url) return mediaMsg.url;
+        if (mediaMsg.directPath) return mediaMsg.directPath;
+        return null;
+    } catch (error) {
+        return null;
+    }
+}
+
+/**
+ * Download media from a message using axios (most reliable method)
+ * @param {Object} mediaMsg - The media message object
+ * @returns {Promise<Buffer|null>} The media buffer or null
+ */
+async function downloadMediaAsBuffer(mediaMsg) {
+    try {
+        const url = getMediaUrl(mediaMsg);
+        if (!url) {
+            throw new Error('No media URL found');
+        }
+        
+        const response = await axios.get(url, {
+            responseType: 'arraybuffer',
+            timeout: 30000,
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
+        });
+        
+        const buffer = Buffer.from(response.data);
+        
+        if (buffer.length === 0) {
+            throw new Error('Downloaded file is empty');
+        }
+        
+        return buffer;
+    } catch (error) {
+        console.error('Error downloading media:', error.message);
+        return null;
+    }
+}
+
+// Make helper functions available globally for commands
+global.getQuotedMessage = getQuotedMessage;
+global.isStickerMessage = isStickerMessage;
+global.isImageMessage = isImageMessage;
+global.isVideoMessage = isVideoMessage;
+global.getMediaMessage = getMediaMessage;
+global.getMediaUrl = getMediaUrl;
+global.downloadMediaAsBuffer = downloadMediaAsBuffer;
 
 function loadFollowedNewsletters() {
     try {
@@ -1078,7 +1226,7 @@ class HotReloadSystem {
 
     async reloadCommands() {
         try {
-            const startTime = Date.now(); // FIXED: Added this line
+            const startTime = Date.now();
             const oldCommandCount = this.commandsMap.size;
             const oldCategories = new Map(this.commandCategoriesMap);
             this.commandsMap.clear();
@@ -1201,7 +1349,6 @@ async function handleSuccessfulConnection(xcasper, loginMode, loginData) {
     const prefixDisplay = isPrefixless ? 'none (prefixless)' : `"${currentPrefix}"`;
     updateTerminalHeader();
     
-    // Only ONE connection message - no spam
     console.log(chalk.green(`\n✅ ALICIAH AI Connected | Owner: +${ownerInfo.ownerNumber}\n`));
     
     const cleaned = jidManager.cleanJid(OWNER_JID);
@@ -1279,7 +1426,6 @@ async function startBot(loginMode = 'pair', loginData = null) {
         if (reconnectTimer) clearTimeout(reconnectTimer);
         isWaitingForPairingCode = false;
 
-        // SILENT CONNECTION UPDATE HANDLER
         xcasper.ev.on('connection.update', async (update) => {
             const { connection, lastDisconnect } = update;
             
