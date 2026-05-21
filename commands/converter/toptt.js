@@ -8,6 +8,7 @@ import path from 'path';
 import { randomBytes } from 'crypto';
 import ffmpeg from 'fluent-ffmpeg';
 import ffmpegPath from 'ffmpeg-static';
+import { downloadMediaMessage } from '@whiskeysockets/baileys';
 
 ffmpeg.setFfmpegPath(ffmpegPath);
 
@@ -26,12 +27,12 @@ export default {
     async execute(xcasper, msg, args, prefix, context) {
         const chatId = msg.key.remoteJid;
         
-        const quoted = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
-        const quotedAudio = quoted?.audioMessage;
+        const quotedMessage = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
+        const quotedAudio = quotedMessage?.audioMessage;
         
         if (!quotedAudio) {
             await xcasper.sendMessage(chatId, { 
-                text: `🎙️ *AUDIO TO VOICE NOTE*\n\n📝 *Usage:* Reply to an audio with: ${prefix}toptt\n\n> toptt  ALICIAH | CASPER TECH`
+                text: `🎙️ *AUDIO TO VOICE NOTE*\n\n📝 *Usage:* Reply to an audio with: ${prefix}toptt\n\n💡 This converts any audio to a WhatsApp voice note.\n\n> toptt  ALICIAH | CASPER TECH`
             }, { quoted: msg });
             return;
         }
@@ -48,26 +49,58 @@ export default {
         try {
             await fs.mkdir(path.join(process.cwd(), 'temp'), { recursive: true });
             
-            const response = await fetch(quotedAudio.url);
-            const audioBuffer = Buffer.from(await response.arrayBuffer());
+            // Download media using baileys
+            const messageKey = {
+                remoteJid: chatId,
+                id: msg.message?.extendedTextMessage?.contextInfo?.stanzaId || msg.key.id,
+                participant: msg.key.participant || chatId
+            };
             
-            inputFile = randomName('.mp3');
+            const mediaBuffer = await downloadMediaMessage(
+                {
+                    key: messageKey,
+                    message: { audioMessage: quotedAudio },
+                    messageType: 'audioMessage'
+                },
+                'buffer',
+                {},
+                {
+                    logger: console,
+                    reuploadRequest: xcasper.updateMediaMessage
+                }
+            );
+            
+            if (!mediaBuffer) {
+                throw new Error('Failed to download audio');
+            }
+            
+            inputFile = randomName('.audio');
             outputFile = randomName('.opus');
             
-            await fs.writeFile(inputFile, audioBuffer);
+            await fs.writeFile(inputFile, mediaBuffer);
             
             // Convert to opus for voice note
             await new Promise((resolve, reject) => {
                 ffmpeg(inputFile)
                     .output(outputFile)
                     .audioCodec('libopus')
-                    .audioBitrate(16)
+                    .audioBitrate('16k')
                     .audioFrequency(16000)
                     .audioChannels(1)
+                    .format('ogg')
                     .on('end', resolve)
-                    .on('error', reject)
+                    .on('error', (err) => {
+                        console.error('FFmpeg error:', err);
+                        reject(err);
+                    })
                     .run();
             });
+            
+            // Verify output file exists and has content
+            const stats = await fs.stat(outputFile);
+            if (stats.size === 0) {
+                throw new Error('Converted file is empty');
+            }
             
             const pttBuffer = await fs.readFile(outputFile);
             
@@ -77,16 +110,19 @@ export default {
                 ptt: true
             }, { quoted: msg });
             
+            // Cleanup
             await fs.unlink(inputFile).catch(() => {});
             await fs.unlink(outputFile).catch(() => {});
             
             await xcasper.sendMessage(chatId, {
-                text: `✅ *Voice note ready!*\n\n> toptt  ALICIAH | CASPER TECH`,
+                text: `✅ *Voice note ready!*\n\n📦 Size: ${(pttBuffer.length / 1024).toFixed(1)} KB\n\n> toptt  ALICIAH | CASPER TECH`,
                 edit: loadingMsg.key
             });
             
         } catch (error) {
             console.error('Toptt error:', error);
+            
+            // Cleanup temp files
             if (inputFile) await fs.unlink(inputFile).catch(() => {});
             if (outputFile) await fs.unlink(outputFile).catch(() => {});
             
