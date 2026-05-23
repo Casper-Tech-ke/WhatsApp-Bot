@@ -1197,13 +1197,20 @@ class LoginManager {
     async selectMode() {
         const sessionExists = fs.existsSync(SESSION_DIR);
         const credsExists = fs.existsSync(path.join(SESSION_DIR, 'creds.json'));
-        const hasValidSession = sessionExists && credsExists;
+        const hasValidSession = sessionExists && credsExists && hasValidSavedSession();
         
-        if (AUTO_RESTART || hasValidSession) {
-            if (hasValidSession) {
-                console.log(chalk.green('\n✅ Existing session detected! Auto-connecting...'));
-            }
+        if (AUTO_RESTART && hasValidSession) {
+            console.log(chalk.green('\n✅ Auto-restart enabled. Restoring existing session...'));
             return { mode: 'auto', phone: null };
+        }
+
+        if (hasValidSession) {
+            console.log(chalk.green('\n✅ Existing session detected! Auto-connecting...'));
+            return { mode: 'auto', phone: null };
+        }
+
+        if (sessionExists && credsExists && !hasValidSession) {
+            console.log(chalk.yellow('\n⚠️ Found stale or invalid session data. Please re-login using the pairing code.'));
         }
         
         console.log(chalk.yellow('\n⚠️ No session found. Please login:'));
@@ -1433,15 +1440,13 @@ async function handleConnectionCloseSilently(lastDisconnect, loginMode, phoneNum
     if (statusCode === 401 || statusCode === 403 || statusCode === 419) {
         cleanSession();
         reconnectAttempts = 0;
-        reconnectTimer = setTimeout(() => {
-            startBot('auto', null);
-        }, 5000);
+        console.log(chalk.yellow('⚠️ Session authentication failed. Cleared saved session. Please restart the bot after re-login.'));
         return;
     }
     
     if (reconnectAttempts >= 5) {
         reconnectAttempts = 0;
-        process.exit(0);
+        console.log(chalk.red('🔴 Connection failed repeatedly. Stopping automatic restarts. Please verify your network/session and restart manually.'));
         return;
     }
     
