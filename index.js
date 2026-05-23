@@ -1020,8 +1020,8 @@ async function checkCommandPermissions(xcasper, msg, command, isOwnerUser, chatI
         return false;
     }
 
-    if (command.ownerOnly && !isOwnerUser) {
-        await xcasper.sendMessage(chatId, { text: '❌ *Owner Only Command*\n\nThis command can only be used by the bot owner.' }, { quoted: msg });
+    if (command.ownerOnly && !isOwnerUser && !isSudo) {
+        await xcasper.sendMessage(chatId, { text: '❌ *Owner Only Command*\n\nThis command can only be used by the bot owner or sudo users.' }, { quoted: msg });
         return false;
     }
 
