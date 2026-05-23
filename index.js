@@ -83,7 +83,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 const SESSION_DIR = './session';
-const BOT_NAME = process.env.BOT_NAME || 'ALICIAH AI';
+let BOT_NAME = process.env.BOT_NAME || 'ALICIAH AI';
+const BOT_NAME_FILE = './data/botname.json';
 const VERSION = '2.0.0';
 const DEFAULT_PREFIX = process.env.PREFIX || '.';
 const OWNER_FILE = './owner.json';
@@ -294,6 +295,28 @@ function updateTerminalHeader() {
 
 prefixCache = loadPrefixFromFiles();
 isPrefixless = prefixCache === '' ? true : false;
+
+function loadBotName() {
+    try {
+        if (!fs.existsSync('./data')) fs.mkdirSync('./data', { recursive: true });
+        if (fs.existsSync(BOT_NAME_FILE)) {
+            const data = JSON.parse(fs.readFileSync(BOT_NAME_FILE, 'utf8'));
+            if (data.name && data.name.trim()) BOT_NAME = data.name.trim();
+        }
+    } catch {}
+}
+
+function saveBotName(name) {
+    try {
+        if (!fs.existsSync('./data')) fs.mkdirSync('./data', { recursive: true });
+        BOT_NAME = name.trim();
+        process.env.BOT_NAME = BOT_NAME;
+        fs.writeFileSync(BOT_NAME_FILE, JSON.stringify({ name: BOT_NAME, updatedAt: new Date().toISOString() }, null, 2));
+        return true;
+    } catch { return false; }
+}
+
+loadBotName();
 updateTerminalHeader();
 
 function detectPlatform() {
@@ -989,6 +1012,16 @@ let statusDetector = null;
 function isUserBlocked(jid) {
     try { if (fs.existsSync(BLOCKED_USERS_FILE)) { const data = JSON.parse(fs.readFileSync(BLOCKED_USERS_FILE, 'utf8')); return data.users && data.users.includes(jid); } } catch {}
     return false;
+}
+
+function saveBotMode(mode) {
+    const valid = ['public', 'private', 'group-only', 'maintenance', 'silent'];
+    if (!valid.includes(mode)) return { success: false, error: `Invalid mode. Use: ${valid.join(', ')}` };
+    try {
+        BOT_MODE = mode;
+        fs.writeFileSync(BOT_MODE_FILE, JSON.stringify({ mode, setAt: new Date().toISOString() }, null, 2));
+        return { success: true, mode };
+    } catch (err) { return { success: false, error: err.message }; }
 }
 
 function checkBotMode(msg, commandName) {
@@ -1860,6 +1893,9 @@ async function handleIncomingMessage(xcasper, msg) {
                     statusDetector,
                     updatePrefix: updatePrefixImmediately,
                     getCurrentPrefix,
+                    saveBotMode,
+                    saveBotName,
+                    getBotMode: () => BOT_MODE,
                     rateLimiter,
                     memberDetector,
                     isPrefixless,
