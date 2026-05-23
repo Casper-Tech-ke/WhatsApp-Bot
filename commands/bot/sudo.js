@@ -44,19 +44,20 @@ export default {
 
         // ── LISTSUDO ──────────────────────────────────────────────────────
         if (command === 'listsudo' || command === 'sudolist') {
-            if (SUDO_USERS.size === 0) {
+            const sudoSet = SUDO_USERS instanceof Set ? SUDO_USERS : new Set();
+            if (sudoSet.size === 0) {
                 return xcasper.sendMessage(chatId, {
                     text: `📋 *Sudo List*\n\n_No sudo users added yet._\n\n_Use \`${prefix}addsudo <number>\` to add one._`
                 }, { quoted: msg });
             }
 
-            const lines = Array.from(SUDO_USERS).map((jid, i) => {
+            const lines = Array.from(sudoSet).map((jid, i) => {
                 const num = jid.split('@')[0];
                 return `┃  ${i + 1}. +${num}`;
             }).join('\n');
 
             return xcasper.sendMessage(chatId, {
-                text: `╭━━━━━━━━━━━━━━━━━━━━━━━━╮\n┃  🔐 *SUDO USERS* (${SUDO_USERS.size})\n┣━━━━━━━━━━━━━━━━━━━━━━━━┫\n${lines}\n╰━━━━━━━━━━━━━━━━━━━━━━━━╯\n\n_Sudo users can use all owner commands._`
+                text: `╭━━━━━━━━━━━━━━━━━━━━━━━━╮\n┃  🔐 *SUDO USERS* (${sudoSet.size})\n┣━━━━━━━━━━━━━━━━━━━━━━━━┫\n${lines}\n╰━━━━━━━━━━━━━━━━━━━━━━━━╯\n\n_Sudo users can use all owner commands._`
             }, { quoted: msg });
         }
 
@@ -90,17 +91,19 @@ export default {
                 }, { quoted: msg });
             }
 
-            if (SUDO_USERS.has(jid)) {
+            if (SUDO_USERS?.has(jid)) {
                 return xcasper.sendMessage(chatId, {
                     text: `⚠️ *+${number} is already a sudo user.*`
                 }, { quoted: msg });
             }
 
-            SUDO_USERS.add(jid);
-            saveSudos();
+            if (SUDO_USERS instanceof Set) {
+                SUDO_USERS.add(jid);
+                saveSudos();
+            }
 
             return xcasper.sendMessage(chatId, {
-                text: `✅ *Sudo Added!*\n\n👤 +${number} now has sudo privileges.\n📋 Total sudo users: ${SUDO_USERS.size}\n\n_They can now use all owner-level commands._`
+                text: `✅ *Sudo Added!*\n\n👤 +${number} now has sudo privileges.\n📋 Total sudo users: ${SUDO_USERS?.size ?? 0}\n\n_They can now use all owner-level commands._`
             }, { quoted: msg });
         }
 
@@ -122,17 +125,19 @@ export default {
 
             const jid = toJid(number);
 
-            if (!SUDO_USERS.has(jid)) {
+            if (!SUDO_USERS?.has(jid)) {
                 return xcasper.sendMessage(chatId, {
                     text: `⚠️ *+${number} is not in the sudo list.*`
                 }, { quoted: msg });
             }
 
-            SUDO_USERS.delete(jid);
-            saveSudos();
+            if (SUDO_USERS instanceof Set) {
+                SUDO_USERS.delete(jid);
+                saveSudos();
+            }
 
             return xcasper.sendMessage(chatId, {
-                text: `✅ *Sudo Removed!*\n\n👤 +${number} has been removed from sudo.\n📋 Remaining sudo users: ${SUDO_USERS.size}`
+                text: `✅ *Sudo Removed!*\n\n👤 +${number} has been removed from sudo.\n📋 Remaining sudo users: ${SUDO_USERS?.size ?? 0}`
             }, { quoted: msg });
         }
 

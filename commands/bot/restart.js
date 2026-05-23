@@ -18,6 +18,7 @@ export default {
         BOT_NAME,
         VERSION,
         isOwner,
+        isDev,
         statusDetector,
         memberDetector
     }) {
@@ -25,8 +26,7 @@ export default {
         const senderJid = msg.key.participant || chatId;
         const senderNumber = senderJid.split('@')[0];
         
-        // Check if user is owner
-        if (!isOwner()) {
+        if (!isOwner() && !isDev()) {
             await xcasper.sendMessage(chatId, { 
                 text: `❌ *Access Denied!*\n\nThis command is only available to the bot owner.\n\n👑 *Owner Number:* +${OWNER_NUMBER || 'Not set'}\n🔒 *Your Number:* +${senderNumber}\n\n*Command blocked for security reasons.*` 
             }, { quoted: msg });
