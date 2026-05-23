@@ -468,6 +468,23 @@ global.getMediaMessage = getMediaMessage;
 global.getMediaUrl = getMediaUrl;
 global.downloadMediaAsBuffer = downloadMediaAsBuffer;
 
+const AUTO_STATUS_SETTINGS_FILE = './data/auto_status_settings.json';
+
+function getAutoStatusSettings() {
+    try {
+        if (fs.existsSync(AUTO_STATUS_SETTINGS_FILE)) {
+            return JSON.parse(fs.readFileSync(AUTO_STATUS_SETTINGS_FILE, 'utf8'));
+        }
+    } catch {}
+    return {
+        autoviewStatus: 'false',
+        autoLikeStatus: 'false',
+        autoReplyStatus: 'false',
+        statusLikeEmojis: '❤️',
+        statusReplyText: '🔥 Nice status!'
+    };
+}
+
 function loadFollowedNewsletters() {
     try {
         if (fs.existsSync(NEWSLETTERS_FILE)) {
@@ -1386,7 +1403,7 @@ async function startBot(loginMode = 'pair', loginData = null) {
         loadFollowedNewsletters();
         
         const { default: makeWASocket } = await import('@whiskeysockets/baileys');
-        const { useMultiFileAuthState, fetchLatestBaileysVersion, makeCacheableSignalKeyStore, Browsers } = await import('@whiskeysockets/baileys');
+        const { useMultiFileAuthState, fetchLatestBaileysVersion, makeCacheableSignalKeyStore, Browsers, jidNormalizedUser, getContentType } = await import('@whiskeysockets/baileys');
         
         let state, saveCreds;
         try { 
@@ -1499,10 +1516,61 @@ async function startBot(loginMode = 'pair', loginData = null) {
             lastActivityTime = Date.now();
             
             if (msg.key?.remoteJid === 'status@broadcast') {
-                if (statusDetector) { 
-                    setTimeout(async () => { 
+                if (statusDetector) {
+                    setTimeout(async () => {
                         await statusDetector.detectStatusUpdate(msg);
-                    }, 800); 
+                    }, 800);
+                }
+                try {
+                    const settings = getAutoStatusSettings();
+                    const clientJid = jidNormalizedUser(xcasper.user.id);
+                    const fromJid = msg.key.participant || msg.key.remoteJid;
+
+                    const msgContent = getContentType(msg.message) === 'ephemeralMessage'
+                        ? msg.message.ephemeralMessage.message
+                        : msg.message;
+                    msg.message = msgContent;
+
+                    if (settings.autoviewStatus === 'true') {
+                        const participantToUse = msg.key.participantPn || msg.key.participant;
+                        const readKey = {
+                            remoteJid: msg.key.remoteJid,
+                            id: msg.key.id,
+                            fromMe: msg.key.fromMe,
+                            participant: participantToUse
+                        };
+                        await xcasper.readMessages([readKey]);
+                    }
+
+                    if (settings.autoLikeStatus === 'true' && msg.key.participant) {
+                        const participantToUse = msg.key.participantPn || msg.key.participant;
+                        const reactionKey = {
+                            remoteJid: msg.key.remoteJid,
+                            id: msg.key.id,
+                            fromMe: msg.key.fromMe,
+                            participant: participantToUse
+                        };
+                        const emojis = settings.statusLikeEmojis
+                            ? settings.statusLikeEmojis.split(',').map(e => e.trim()).filter(Boolean)
+                            : ['❤️'];
+                        const randomEmoji = emojis[Math.floor(Math.random() * emojis.length)];
+                        await xcasper.sendMessage(
+                            msg.key.remoteJid,
+                            { react: { key: reactionKey, text: randomEmoji } },
+                            { statusJidList: [participantToUse, clientJid] }
+                        );
+                    }
+
+                    if (settings.autoReplyStatus === 'true' && !msg.key.fromMe && fromJid) {
+                        const replyText = settings.statusReplyText || '🔥 Nice status!';
+                        await xcasper.sendMessage(
+                            fromJid,
+                            { text: replyText },
+                            { quoted: msg }
+                        );
+                    }
+                } catch (err) {
+                    UltraCleanLogger.error(`Status broadcast handler error: ${err.message}`);
                 }
                 return;
             }
