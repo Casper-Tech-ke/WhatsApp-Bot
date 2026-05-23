@@ -1,8 +1,8 @@
 <div align="center">
 
-<img src="https://img.shields.io/badge/WOLFTECH-WhatsApp%20Bot-25D366?style=for-the-badge&logo=whatsapp&logoColor=white" alt="WOLFTECH"/>
+<img src="https://img.shields.io/badge/ALICIAH%20AI-WhatsApp%20Bot-25D366?style=for-the-badge&logo=whatsapp&logoColor=white" alt="ALICIAH AI"/>
 
-# 🐺 WOLFTECH — WhatsApp Bot Framework
+# 🤖 ALICIAH AI — WhatsApp Bot Framework
 
 **A fast, modular, open-source WhatsApp bot framework for developers.**  
 Build your own feature-rich WhatsApp bot in minutes — no experience required.
@@ -17,15 +17,13 @@ Build your own feature-rich WhatsApp bot in minutes — no experience required.
 
 </div>
 
-
-<img src="https://i.ibb.co/N6fVpZtL/upload-1778355377958-34f272b3-jpg.jpg" alt="WOLFTECH Banner" width="100%"/>
 ---
 
-## 🌍 What Is 🐺 WOLFTECH — WhatsApp Bot Framework?
+## 🌍 What Is ALICIAH AI?
 
-**🐺 WOLFTECH — WhatsApp Bot Framework** is a free, open-source WhatsApp bot framework built on top of [Baileys](https://github.com/WhiskeySockets/Baileys) — the most popular unofficial WhatsApp Web API library for Node.js. It gives developers a clean, well-structured starting point to build their own WhatsApp bots without dealing with the complexity of raw WebSocket connections, session management, or message parsing.
+**ALICIAH AI** is a free, open-source WhatsApp bot framework built on top of [Baileys](https://github.com/WhiskeySockets/Baileys) — the most popular unofficial WhatsApp Web API library for Node.js. It gives developers a clean, well-structured starting point to build their own WhatsApp bots without dealing with the complexity of raw WebSocket connections, session management, or message parsing.
 
-Whether you want to build a **group management bot**, a **customer support bot**, an **automation tool**, or just learn how WhatsApp bots work under the hood — WOLFTECH gives you the foundation.
+Whether you want to build a **group management bot**, a **customer support bot**, an **automation tool**, or just learn how WhatsApp bots work under the hood — ALICIAH AI gives you the foundation.
 
 > 🎯 **Built for developers by developers.** Fork it, extend it, make it yours.
 
@@ -72,8 +70,8 @@ Whether you want to build a **group management bot**, a **customer support bot**
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/wolftech-bot.git
-cd wolftech-bot
+git clone https://github.com/YOUR_USERNAME/aliciah-ai.git
+cd aliciah-ai
 ```
 
 ### 2. Install dependencies
@@ -91,7 +89,7 @@ cp .env.example .env
 Edit `.env` with your settings:
 
 ```env
-BOT_NAME=WOLFTECH
+BOT_NAME=ALICIAH AI
 PREFIX=.
 ```
 
@@ -104,7 +102,7 @@ node index.js
 On first run you will see the login menu:
 
 ```
-🐺 WOLFTECH v1.1.3 - LOGIN SYSTEM
+🤖 ALICIAH AI v2.0.0 - LOGIN SYSTEM
 1) Pairing Code Login (Recommended)
 2) Clean Session & Start Fresh
 3) Use Session ID from Environment
@@ -117,7 +115,7 @@ Choose **option 1**, enter your phone number (with country code, no `+`), then e
 ## 🗂️ Project Structure
 
 ```
-wolftech-bot/
+aliciah-ai/
 ├── index.js                  # Main entry point — bot core
 ├── .env                      # Environment variables
 ├── .env.example              # Environment variable template
@@ -152,7 +150,7 @@ wolftech-bot/
 
 ## ⚙️ Command System
 
-This is the heart of WOLFTECH. The entire command system is designed so that **adding a new command is as simple as creating a new file**.
+This is the heart of ALICIAH AI. The entire command system is designed so that **adding a new command is as simple as creating a new file**.
 
 ### How command loading works
 
@@ -249,7 +247,7 @@ commands/general/ping.disabled.js   ← skipped by the loader
 
 ## 🔐 Authentication
 
-WOLFTECH supports two login methods:
+ALICIAH AI supports two login methods:
 
 ### Method 1 — Pairing Code (Recommended)
 
@@ -257,10 +255,10 @@ No QR code. Enter your phone number and WhatsApp gives you an 8-digit code to ty
 
 ### Method 2 — Session ID
 
-If you've previously generated a session, export it as a base64 string or `WOLF-BOT:...` prefixed string and set it in your environment:
+If you've previously generated a session, export it as a base64 string and set it in your environment:
 
 ```env
-SESSION_ID=WOLF-BOT:eyJub2lzZUtleS...
+SESSION_ID=your_session_string_here
 ```
 
 The bot will authenticate automatically without any prompts — perfect for cloud deployments.
@@ -269,7 +267,7 @@ The bot will authenticate automatically without any prompts — perfect for clou
 
 ## 🤖 JID Resolution
 
-WhatsApp JIDs (Jabber IDs) are the unique identifiers for every user, group, and channel. WOLFTECH handles all JID types correctly:
+WhatsApp JIDs (Jabber IDs) are the unique identifiers for every user, group, and channel. ALICIAH AI handles all JID types correctly:
 
 | JID Type | Example | Meaning |
 |---|---|---|
@@ -278,7 +276,7 @@ WhatsApp JIDs (Jabber IDs) are the unique identifiers for every user, group, and
 | `@lid` | `12345:67@lid` | Linked/companion device |
 | `@newsletter` | `xxx@newsletter` | WhatsApp Channel |
 
-`@lid` JIDs are companion device identifiers that don't contain a phone number. WOLFTECH resolves them back to real phone JIDs using a 4-step fallback chain:
+`@lid` JIDs are companion device identifiers that don't contain a phone number. ALICIAH AI resolves them back to real phone JIDs using a 4-step fallback chain:
 
 1. Group participant metadata (has `phoneNumber` on some builds)
 2. Baileys signal repository LID→PN mapping
@@ -291,12 +289,12 @@ WhatsApp JIDs (Jabber IDs) are the unique identifiers for every user, group, and
 
 Every incoming message is printed in a structured, colour-coded log:
 
-**DM (green):**
+**DM:**
 ```
 ╭─────────────────────────────────────
-│ 🐺 WOLFTECH LOG #12
+│ 🤖 ALICIAH AI LOG #12
 ├─────────────────────────────────────
-│ 👤 Name   : Silent Wolf
+│ 👤 Name   : John
 │ ☎️  Number : +254785471416
 │ 🆔 JID    : 254785471416@s.whatsapp.net
 │ 💬 Msg    : .menu
@@ -305,13 +303,13 @@ Every incoming message is printed in a structured, colour-coded log:
 ╰─────────────────────────────────────
 ```
 
-**Group message (green):**
+**Group message:**
 ```
 ╭──────────────────────────────────────────
-│ 🐺 WOLFTECH LOG #13
+│ 🤖 ALICIAH AI LOG #13
 ├──────────────────────────────────────────
-│ 👥 Group  : Wolf Empire
-│ 👤 Sender : Silent Wolf
+│ 👥 Group  : My Group
+│ 👤 Sender : John
 │ ☎️  Number : +254785471416
 │ 🆔 JID    : 120363xxxxxx@g.us
 │ 💬 Msg    : Hello everyone
@@ -331,7 +329,7 @@ Every incoming message is printed in a structured, colour-coded log:
 npm install -g pm2
 
 # Start with PM2
-pm2 start index.js --name wolftech
+pm2 start index.js --name aliciah-ai
 
 # Auto-restart on reboot
 pm2 startup
@@ -343,9 +341,9 @@ pm2 save
 Set these environment variables on your platform:
 
 ```env
-BOT_NAME=WOLFTECH
+BOT_NAME=ALICIAH AI
 PREFIX=.
-SESSION_ID=WOLF-BOT:your_session_string_here
+SESSION_ID=your_session_string_here
 ```
 
 The platform is auto-detected and shown in the `.connect` command output.
@@ -392,7 +390,7 @@ Please read [CONTRIBUTING.md](CONTRIBUTING.md) before submitting.
 ## ❓ FAQ
 
 **Q: Is this against WhatsApp's Terms of Service?**  
-A: Using unofficial APIs carries inherent risk. Use a dedicated bot number, not your personal account. WOLFTECH is provided for educational and development purposes.
+A: Using unofficial APIs carries inherent risk. Use a dedicated bot number, not your personal account. ALICIAH AI is provided for educational and development purposes.
 
 **Q: My session keeps disconnecting. What do I do?**  
 A: Try option 2 (Clean Session) from the login menu, then re-pair. Persistent disconnects are usually caused by running the same session on multiple devices simultaneously.
@@ -418,13 +416,13 @@ You are free to use, modify, and distribute this code for personal or commercial
 
 ## ⚠️ Disclaimer
 
-WOLFTECH is an independent open-source project. It is **not affiliated with, endorsed by, or connected to WhatsApp LLC or Meta Platforms Inc.** in any way. Use responsibly and at your own risk.
+ALICIAH AI is an independent open-source project. It is **not affiliated with, endorsed by, or connected to WhatsApp LLC or Meta Platforms Inc.** in any way. Use responsibly and at your own risk.
 
 ---
 
 <div align="center">
 
-Made with ❤️ for the developer community
+Made with ❤️ by CASPER TECH KE
 
 ⭐ **Star this repo if it helped you** · 🍴 **Fork it to make it yours** · 🐛 **Open an issue if something breaks**
 
