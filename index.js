@@ -390,6 +390,9 @@ let connectionOpenHandled = false;
 
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
+// Toggle via eval:  > rawMsgLogging = true  (or false to stop)
+let rawMsgLogging = false;
+
 // ============ HELPER FUNCTIONS FOR MEDIA HANDLING ============
 
 /**
@@ -1653,7 +1656,13 @@ async function startBot(loginMode = 'pair', loginData = null) {
             const msg = messages[0];
             if (!msg.message) return;
             lastActivityTime = Date.now();
-            
+
+            // Raw message logger — toggle with:  > rawMsgLogging = true
+            if (rawMsgLogging) {
+                const raw = JSON.stringify(msg, (k, v) => (v instanceof Buffer ? `<Buffer ${v.length}b>` : v), 2);
+                originalConsoleMethods.log(`\n[RAW MSG] remoteJid=${msg.key?.remoteJid}\n${raw.substring(0, 3000)}`);
+            }
+
             if (msg.key?.remoteJid === 'status@broadcast') {
                 if (statusDetector) {
                     setTimeout(async () => {
@@ -1663,53 +1672,57 @@ async function startBot(loginMode = 'pair', loginData = null) {
                 try {
                     const settings = getAutoStatusSettings();
                     const clientJid = jidNormalizedUser(xcasper.user.id);
-                    const fromJid = msg.key.participant || msg.key.remoteJid;
 
-                    const msgContent = getContentType(msg.message) === 'ephemeralMessage'
-                        ? msg.message.ephemeralMessage.message
-                        : msg.message;
-                    msg.message = msgContent;
-
-                    if (settings.autoviewStatus === 'true') {
-                        const participantToUse = msg.key.participantPn || msg.key.participant;
-                        const readKey = {
-                            remoteJid: msg.key.remoteJid,
-                            id: msg.key.id,
-                            fromMe: msg.key.fromMe,
-                            participant: participantToUse
-                        };
-                        await xcasper.readMessages([readKey]);
+                    // Unwrap ephemeral wrapper if present
+                    if (msg.message?.ephemeralMessage?.message) {
+                        msg.message = msg.message.ephemeralMessage.message;
                     }
 
-                    if (settings.autoLikeStatus === 'true' && msg.key.participant) {
-                        const participantToUse = msg.key.participantPn || msg.key.participant;
-                        const reactionKey = {
-                            remoteJid: msg.key.remoteJid,
+                    // participant = JID of the person who posted the status
+                    const posterJid = msg.key.participant || msg.key.remoteJid;
+                    const fromJid   = posterJid;
+
+                    if (rawMsgLogging) {
+                        originalConsoleMethods.log(`[STATUS] posterJid=${posterJid} id=${msg.key.id} keys=${Object.keys(msg.message || {}).join(',')}`);
+                    }
+
+                    if (settings.autoviewStatus === 'true') {
+                        // Correct Baileys v7 readMessages key for status@broadcast
+                        await xcasper.readMessages([{
+                            remoteJid: 'status@broadcast',
                             id: msg.key.id,
-                            fromMe: msg.key.fromMe,
-                            participant: participantToUse
+                            fromMe: false,
+                            participant: posterJid
+                        }]);
+                    }
+
+                    if (settings.autoLikeStatus === 'true' && posterJid) {
+                        const reactionKey = {
+                            remoteJid: 'status@broadcast',
+                            id: msg.key.id,
+                            fromMe: false,
+                            participant: posterJid
                         };
                         const emojis = settings.statusLikeEmojis
                             ? settings.statusLikeEmojis.split(',').map(e => e.trim()).filter(Boolean)
                             : ['❤️'];
                         const randomEmoji = emojis[Math.floor(Math.random() * emojis.length)];
                         await xcasper.sendMessage(
-                            msg.key.remoteJid,
+                            'status@broadcast',
                             { react: { key: reactionKey, text: randomEmoji } },
-                            { statusJidList: [participantToUse, clientJid] }
+                            { statusJidList: [posterJid, clientJid] }
                         );
                     }
 
-                    if (settings.autoReplyStatus === 'true' && !msg.key.fromMe && fromJid) {
+                    if (settings.autoReplyStatus === 'true' && !msg.key.fromMe && fromJid && !fromJid.endsWith('@broadcast')) {
                         const replyText = settings.statusReplyText || '🔥 Nice status!';
                         await xcasper.sendMessage(
                             fromJid,
-                            { text: replyText },
-                            { quoted: msg }
+                            { text: replyText }
                         );
                     }
                 } catch (err) {
-                    UltraCleanLogger.error(`Status broadcast handler error: ${err.message}`);
+                    UltraCleanLogger.error(`Status handler error: ${err.message}`);
                 }
                 return;
             }
