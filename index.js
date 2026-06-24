@@ -1595,23 +1595,42 @@ async function startBot(loginMode = 'pair', loginData = null) {
         });
 
         if (loginMode === 'pair' && loginData) {
-            setTimeout(async () => {
-                if (!state.creds.registered && !isWaitingForPairingCode) {
-                    isWaitingForPairingCode = true;
-                    try {
-                        const code = await xcasper.requestPairingCode(loginData);
-                        const cleanCode = code.replace(/\s+/g, '');
-                        const formattedCode = cleanCode.length === 8 ? `${cleanCode.substring(0, 4)}-${cleanCode.substring(4, 8)}` : cleanCode;
-                        originalConsoleMethods.log(chalk.greenBright(`\n╔══════════════════════════════════════════╗\n║         🔗 PAIRING CODE - ALICIAH AI        \n╠══════════════════════════════════════════╣\n║ 📞 Phone  : ${chalk.cyan(loginData)}\n║ 🔑 Code   : ${chalk.yellow.bold(formattedCode)}\n║ ⏰ Expires : 10 minutes\n╚══════════════════════════════════════════╝\n`));
-                        originalConsoleMethods.log(chalk.cyan('📱 INSTRUCTIONS:'));
-                        originalConsoleMethods.log(chalk.white('1. Open WhatsApp → Settings → Linked Devices'));
-                        originalConsoleMethods.log(chalk.white('2. Tap "Link a Device"'));
-                        originalConsoleMethods.log(chalk.yellow.bold(`3. Enter code: ${formattedCode}\n`));
-                    } catch (error) {
-                        isWaitingForPairingCode = false;
+            let pairingExpireTimer = null;
+            const requestCode = async (attempt = 1) => {
+                if (state.creds.registered || isConnected) return;
+                isWaitingForPairingCode = true;
+                try {
+                    originalConsoleMethods.log(chalk.cyan(`\n⏳ Requesting pairing code (attempt ${attempt})...`));
+                    const code = await xcasper.requestPairingCode(loginData);
+                    const cleanCode = code.replace(/\s+/g, '');
+                    const formattedCode = cleanCode.length === 8 ? `${cleanCode.substring(0, 4)}-${cleanCode.substring(4, 8)}` : cleanCode;
+                    originalConsoleMethods.log(chalk.greenBright(`\n╔══════════════════════════════════════════╗\n║         🔗 PAIRING CODE - ALICIAH AI        \n╠══════════════════════════════════════════╣\n║ 📞 Phone  : ${chalk.cyan(loginData)}\n║ 🔑 Code   : ${chalk.yellow.bold(formattedCode)}\n║ ⏰ Expires : 10 minutes\n╚══════════════════════════════════════════╝\n`));
+                    originalConsoleMethods.log(chalk.cyan('📱 INSTRUCTIONS:'));
+                    originalConsoleMethods.log(chalk.white('1. Open WhatsApp → Settings → Linked Devices'));
+                    originalConsoleMethods.log(chalk.white('2. Tap "Link a Device"'));
+                    originalConsoleMethods.log(chalk.yellow.bold(`3. Enter code: ${formattedCode}\n`));
+                    if (pairingExpireTimer) clearTimeout(pairingExpireTimer);
+                    pairingExpireTimer = setTimeout(async () => {
+                        if (!isConnected) {
+                            originalConsoleMethods.log(chalk.yellow('\n⏰ Pairing code expired — requesting a new one automatically...'));
+                            isWaitingForPairingCode = false;
+                            await requestCode(attempt + 1);
+                        }
+                    }, 9.5 * 60 * 1000);
+                } catch (error) {
+                    isWaitingForPairingCode = false;
+                    const msg = error?.message || String(error);
+                    originalConsoleMethods.log(chalk.red(`\n❌ Failed to get pairing code: ${msg}`));
+                    if (attempt < 3) {
+                        originalConsoleMethods.log(chalk.yellow(`🔄 Retrying in 5 seconds... (${attempt}/3)`));
+                        setTimeout(() => requestCode(attempt + 1), 5000);
+                    } else {
+                        originalConsoleMethods.log(chalk.red('🚨 Could not get a pairing code after 3 attempts. Returning to login menu...'));
+                        setTimeout(async () => { await main(); }, 3000);
                     }
                 }
-            }, 2000);
+            };
+            setTimeout(() => requestCode(), 2000);
         }
 
         xcasper.ev.on('creds.update', saveCreds);
