@@ -1093,7 +1093,10 @@ async function checkCommandPermissions(xcasper, msg, command, isOwnerUser, chatI
 
 function startHeartbeat(xcasper) {
     if (heartbeatInterval) clearInterval(heartbeatInterval);
-    heartbeatInterval = setInterval(async () => { if (isConnected && xcasper) { try { await xcasper.sendPresenceUpdate('available'); lastActivityTime = Date.now(); } catch {} } }, 60 * 1000);
+    heartbeatInterval = setInterval(async () => {
+        if (!isConnected || !xcasper) return;
+        try { await xcasper.sendPresenceUpdate('available'); lastActivityTime = Date.now(); } catch {}
+    }, 20 * 1000);
 }
 
 function stopHeartbeat() { if (heartbeatInterval) { clearInterval(heartbeatInterval); heartbeatInterval = null; } }
@@ -1447,10 +1450,11 @@ class HotReloadSystem {
 async function handleConnectionCloseSilently(lastDisconnect, loginMode, phoneNumber) {
     if (reconnectTimer) clearTimeout(reconnectTimer);
     if (isConnected) return;
-    
+
     const statusCode = lastDisconnect?.error?.output?.statusCode;
-    
-    if (statusCode === 401 || statusCode === 403 || statusCode === 419) {
+
+    // 401 = WhatsApp explicitly logged us out — only time we wipe the session
+    if (statusCode === 401) {
         if (isWaitingForPairingCode) {
             originalConsoleMethods.log(chalk.cyan('🔄 Connection reset during pairing — reconnecting, your code is still valid...'));
             setTimeout(async () => { await startBot(loginMode, phoneNumber); }, 3000);
@@ -1458,23 +1462,19 @@ async function handleConnectionCloseSilently(lastDisconnect, loginMode, phoneNum
         }
         cleanSession();
         reconnectAttempts = 0;
-        originalConsoleMethods.log(chalk.yellow('⚠️ Session expired/invalid. Cleared session — launching re-pairing in 3s...'));
+        originalConsoleMethods.log(chalk.yellow('⚠️ Logged out by WhatsApp. Session cleared — re-pairing in 3s...'));
         setTimeout(async () => { await main(); }, 3000);
         return;
     }
-    
-    if (reconnectAttempts >= 5) {
-        reconnectAttempts = 0;
-        console.log(chalk.red('🔴 Connection failed repeatedly. Stopping automatic restarts. Please verify your network/session and restart manually.'));
-        return;
-    }
-    
+
+    // 403 / 419 / 408 / 515 / undefined = transient drop — reconnect WITHOUT wiping session
     reconnectAttempts++;
-    let delay = Math.min(5000 * Math.pow(2, reconnectAttempts - 1), 60000);
-    
+    // Cap at 30s after a few retries; reset counter once we reconnect successfully
+    const retryDelay = Math.min(3000 * Math.pow(1.5, reconnectAttempts - 1), 30000);
+
     reconnectTimer = setTimeout(() => {
         startBot(loginMode, phoneNumber);
-    }, delay);
+    }, retryDelay);
 }
 
 async function handleSuccessfulConnection(xcasper, loginMode, loginData) {
@@ -1552,7 +1552,7 @@ async function startBot(loginMode = 'pair', loginData = null) {
             markOnlineOnConnect: true, 
             generateHighQualityLinkPreview: true, 
             connectTimeoutMs: 60000, 
-            keepAliveIntervalMs: 30000, 
+            keepAliveIntervalMs: 10000, 
             emitOwnEvents: true, 
             mobile: false, 
             getMessage: async (key) => store?.getMessage(key.remoteJid, key.id) || null, 
