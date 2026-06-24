@@ -1223,9 +1223,9 @@ class LoginManager {
         
         originalConsoleMethods.log(chalk.yellow('\n⚠️ No session found. Please login:'));
         originalConsoleMethods.log(chalk.cyan('\n🤖 ALICIAH AI v' + VERSION + ' - LOGIN SYSTEM'));
-        console.log(chalk.blue('1) Pairing Code Login (Recommended)'));
-        console.log(chalk.blue('2) Clean Session & Start Fresh'));
-        console.log(chalk.magenta('3) Use Session ID from Environment'));
+        originalConsoleMethods.log(chalk.blue('1) Pairing Code Login (Recommended)'));
+        originalConsoleMethods.log(chalk.blue('2) Clean Session & Start Fresh'));
+        originalConsoleMethods.log(chalk.magenta('3) Use Session ID from Environment'));
         const choice = await this.ask('Choose option (1-3, default 1): ');
         switch (choice.trim()) {
             case '1': return await this.pairingCodeMode();
@@ -1448,7 +1448,8 @@ async function handleConnectionCloseSilently(lastDisconnect, loginMode, phoneNum
     if (statusCode === 401 || statusCode === 403 || statusCode === 419) {
         cleanSession();
         reconnectAttempts = 0;
-        console.log(chalk.yellow('⚠️ Session authentication failed. Cleared saved session. Please restart the bot after re-login.'));
+        originalConsoleMethods.log(chalk.yellow('⚠️ Session expired/invalid. Cleared session — launching re-pairing in 3s...'));
+        setTimeout(async () => { await main(); }, 3000);
         return;
     }
     
@@ -1591,12 +1592,11 @@ async function startBot(loginMode = 'pair', loginData = null) {
                         const code = await xcasper.requestPairingCode(loginData);
                         const cleanCode = code.replace(/\s+/g, '');
                         const formattedCode = cleanCode.length === 8 ? `${cleanCode.substring(0, 4)}-${cleanCode.substring(4, 8)}` : cleanCode;
-                        console.clear();
-                        console.log(chalk.greenBright(`\n╔══════════════════════════════════════════╗\n║         🔗 PAIRING CODE - ALICIAH AI        \n╠══════════════════════════════════════════╣\n║ 📞 Phone  : ${chalk.cyan(loginData)}\n║ 🔑 Code   : ${chalk.yellow.bold(formattedCode)}\n║ ⏰ Expires : 10 minutes\n╚══════════════════════════════════════════╝\n`));
-                        console.log(chalk.cyan('📱 INSTRUCTIONS:'));
-                        console.log(chalk.white('1. Open WhatsApp → Settings → Linked Devices'));
-                        console.log(chalk.white('2. Tap "Link a Device"'));
-                        console.log(chalk.yellow.bold(`3. Enter code: ${formattedCode}\n`));
+                        originalConsoleMethods.log(chalk.greenBright(`\n╔══════════════════════════════════════════╗\n║         🔗 PAIRING CODE - ALICIAH AI        \n╠══════════════════════════════════════════╣\n║ 📞 Phone  : ${chalk.cyan(loginData)}\n║ 🔑 Code   : ${chalk.yellow.bold(formattedCode)}\n║ ⏰ Expires : 10 minutes\n╚══════════════════════════════════════════╝\n`));
+                        originalConsoleMethods.log(chalk.cyan('📱 INSTRUCTIONS:'));
+                        originalConsoleMethods.log(chalk.white('1. Open WhatsApp → Settings → Linked Devices'));
+                        originalConsoleMethods.log(chalk.white('2. Tap "Link a Device"'));
+                        originalConsoleMethods.log(chalk.yellow.bold(`3. Enter code: ${formattedCode}\n`));
                     } catch (error) {
                         isWaitingForPairingCode = false;
                     }
