@@ -1911,6 +1911,19 @@ async function handleIncomingMessage(xcasper, msg) {
             if (!code) return;
             try {
                 let result;
+                const evalCtx = {
+                    xcasper, msg, args, chatId, senderJid,
+                    isOwner: isOwnerUser,
+                    jidManager, store,
+                    BOT_NAME, VERSION,
+                    OWNER_NUMBER: OWNER_CLEAN_NUMBER,
+                    OWNER_JID: OWNER_CLEAN_JID,
+                    commands, commandCategories,
+                    fs, path,
+                    require: (m) => import(m)
+                };
+                const ctxKeys = Object.keys(evalCtx);
+                const ctxVals = Object.values(evalCtx);
                 if (isShell) {
                     const { exec } = await import('child_process');
                     result = await new Promise((resolve, reject) => {
@@ -1920,13 +1933,11 @@ async function handleIncomingMessage(xcasper, msg) {
                         });
                     });
                 } else if (isAsyncEval) {
-                    const fn = new Function('xcasper', 'msg', 'args', 'chatId', 'senderJid', 'require',
-                        `return (async () => { ${code} })()`);
-                    result = await fn(xcasper, msg, args, chatId, senderJid, (m) => import(m));
+                    const fn = new Function(...ctxKeys, `return (async () => { ${code} })()`);
+                    result = await fn(...ctxVals);
                 } else {
-                    const fn = new Function('xcasper', 'msg', 'args', 'chatId', 'senderJid',
-                        `return (${code})`);
-                    result = fn(xcasper, msg, args, chatId, senderJid);
+                    const fn = new Function(...ctxKeys, `return (${code})`);
+                    result = fn(...ctxVals);
                     if (result instanceof Promise) result = await result;
                 }
                 const out = result === undefined ? '✅ Done (no return value)' : JSON.stringify(result, null, 2) ?? String(result);
