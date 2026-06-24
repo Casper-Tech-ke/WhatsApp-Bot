@@ -278,8 +278,7 @@ function updatePrefixImmediately(newPrefix) {
 function updateTerminalHeader() {
     const currentPrefix = getCurrentPrefix();
     const prefixDisplay = isPrefixless ? 'none (prefixless)' : `"${currentPrefix}"`;
-    console.clear();
-    console.log(chalk.cyan(`
+    originalConsoleMethods.log(chalk.cyan(`
 ╔══════════════════════════════════════════════════════════════════════╗
 ║   🤖 ${chalk.cyan.bold(`ALICIAH AI v${VERSION}`)} ${chalk.blue('— Powered by CASPER TECH KE')}
 ║   💬 Prefix  : ${prefixDisplay}
@@ -1200,21 +1199,21 @@ class LoginManager {
         const hasValidSession = sessionExists && credsExists && hasValidSavedSession();
         
         if (AUTO_RESTART && hasValidSession) {
-            console.log(chalk.green('\n✅ Auto-restart enabled. Restoring existing session...'));
+            originalConsoleMethods.log(chalk.green('\n✅ Auto-restart enabled. Restoring existing session...'));
             return { mode: 'auto', phone: null };
         }
 
         if (hasValidSession) {
-            console.log(chalk.green('\n✅ Existing session detected! Auto-connecting...'));
+            originalConsoleMethods.log(chalk.green('\n✅ Existing session detected! Auto-connecting...'));
             return { mode: 'auto', phone: null };
         }
 
         if (sessionExists && credsExists && !hasValidSession) {
-            console.log(chalk.yellow('\n⚠️ Found stale or invalid session data. Please re-login using the pairing code.'));
+            originalConsoleMethods.log(chalk.yellow('\n⚠️ Found stale or invalid session data. Please re-login using the pairing code.'));
         }
         
-        console.log(chalk.yellow('\n⚠️ No session found. Please login:'));
-        console.log(chalk.cyan('\n🤖 ALICIAH AI v' + VERSION + ' - LOGIN SYSTEM'));
+        originalConsoleMethods.log(chalk.yellow('\n⚠️ No session found. Please login:'));
+        originalConsoleMethods.log(chalk.cyan('\n🤖 ALICIAH AI v' + VERSION + ' - LOGIN SYSTEM'));
         console.log(chalk.blue('1) Pairing Code Login (Recommended)'));
         console.log(chalk.blue('2) Clean Session & Start Fresh'));
         console.log(chalk.magenta('3) Use Session ID from Environment'));
@@ -1468,7 +1467,7 @@ async function handleSuccessfulConnection(xcasper, loginMode, loginData) {
     const prefixDisplay = isPrefixless ? 'none (prefixless)' : `"${currentPrefix}"`;
     updateTerminalHeader();
     
-    console.log(chalk.green(`\n✅ ALICIAH AI Connected | Owner: +${ownerInfo.ownerNumber}\n`));
+    originalConsoleMethods.log(chalk.green(`\n✅ ALICIAH AI Connected | Owner: +${ownerInfo.ownerNumber}\n`));
     
     const cleaned = jidManager.cleanJid(OWNER_JID);
     if (ultimateFixSystem.isFixNeeded(OWNER_JID)) {
