@@ -1931,6 +1931,7 @@ async function handleIncomingMessage(xcasper, msg) {
                     const from        = chatId;
                     const rawJid      = chatId;
                     const rawSender   = senderJid;
+                    const isGroup     = chatId.endsWith('@g.us');
                     // resolve LID → phone-based JID
                     const jid         = await resolveJidForLog(xcasper, chatId, isGroup ? chatId : null).catch(() => chatId);
                     const sender      = await resolveJidForLog(xcasper, senderJid, isGroup ? chatId : null).catch(() => senderJid);
@@ -1939,7 +1940,6 @@ async function handleIncomingMessage(xcasper, msg) {
                     const isOwner     = isOwnerUser;
                     const isDev       = isDevUser(msg);
                     const isSudo      = isSudoUser(senderJid);
-                    const isGroup     = chatId.endsWith('@g.us');
                     const prefix      = getCurrentPrefix();
                     const botName     = BOT_NAME;
                     const botVersion  = VERSION;
