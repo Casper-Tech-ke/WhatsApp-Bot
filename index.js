@@ -1451,6 +1451,11 @@ async function handleConnectionCloseSilently(lastDisconnect, loginMode, phoneNum
     const statusCode = lastDisconnect?.error?.output?.statusCode;
     
     if (statusCode === 401 || statusCode === 403 || statusCode === 419) {
+        if (isWaitingForPairingCode) {
+            originalConsoleMethods.log(chalk.cyan('🔄 Connection reset during pairing — reconnecting, your code is still valid...'));
+            setTimeout(async () => { await startBot(loginMode, phoneNumber); }, 3000);
+            return;
+        }
         cleanSession();
         reconnectAttempts = 0;
         originalConsoleMethods.log(chalk.yellow('⚠️ Session expired/invalid. Cleared session — launching re-pairing in 3s...'));
