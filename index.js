@@ -1190,6 +1190,15 @@ async function authenticateWithSessionId(sessionId) {
     } catch (error) { throw error; }
 }
 
+function hasValidSavedSession() {
+    try {
+        const credsPath = path.join(SESSION_DIR, 'creds.json');
+        if (!fs.existsSync(credsPath)) return false;
+        const creds = JSON.parse(fs.readFileSync(credsPath, 'utf8'));
+        return !!(creds && creds.me && creds.me.id && creds.registered);
+    } catch { return false; }
+}
+
 class LoginManager {
     constructor() { this.rl = readline.createInterface({ input: process.stdin, output: process.stdout }); }
     
