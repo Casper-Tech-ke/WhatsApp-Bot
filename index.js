@@ -1900,6 +1900,44 @@ async function handleIncomingMessage(xcasper, msg) {
             }
         }
         
+        // ── Owner-only eval/exec shortcuts ──────────────────────────
+        const trimmed = textMsg.trim();
+        if (trimmed.startsWith('=>') || trimmed.startsWith('>') || trimmed.startsWith('&')) {
+            if (!isOwnerUser) return;
+            const isAsyncEval = trimmed.startsWith('=>');
+            const isShell     = trimmed.startsWith('&');
+            const isEval      = !isAsyncEval && !isShell && trimmed.startsWith('>');
+            const code        = trimmed.slice(isAsyncEval ? 2 : 1).trim();
+            if (!code) return;
+            try {
+                let result;
+                if (isShell) {
+                    const { exec } = await import('child_process');
+                    result = await new Promise((resolve, reject) => {
+                        exec(code, { timeout: 15000 }, (err, stdout, stderr) => {
+                            if (err) reject(err);
+                            else resolve((stdout || '') + (stderr ? `\n[stderr]\n${stderr}` : ''));
+                        });
+                    });
+                } else if (isAsyncEval) {
+                    const fn = new Function('xcasper', 'msg', 'args', 'chatId', 'senderJid', 'require',
+                        `return (async () => { ${code} })()`);
+                    result = await fn(xcasper, msg, args, chatId, senderJid, (m) => import(m));
+                } else {
+                    const fn = new Function('xcasper', 'msg', 'args', 'chatId', 'senderJid',
+                        `return (${code})`);
+                    result = fn(xcasper, msg, args, chatId, senderJid);
+                    if (result instanceof Promise) result = await result;
+                }
+                const out = result === undefined ? '✅ Done (no return value)' : JSON.stringify(result, null, 2) ?? String(result);
+                await xcasper.sendMessage(chatId, { text: `\`\`\`\n${String(out).slice(0, 3000)}\n\`\`\`` }, { quoted: msg });
+            } catch (err) {
+                await xcasper.sendMessage(chatId, { text: `❌ *Error:*\n\`\`\`\n${err.message}\n\`\`\`` }, { quoted: msg });
+            }
+            return;
+        }
+        // ────────────────────────────────────────────────────────────
+
         if (!commandName) return;
         
         const rateLimitCheck = rateLimiter.canSendCommand(chatId, senderJid, commandName);
