@@ -1921,11 +1921,54 @@ async function handleIncomingMessage(xcasper, msg) {
                     );
                     result = raw;
                 } else {
-                    // context available to eval
-                    const isOwner = isOwnerUser;
-                    const bot     = xcasper;
-                    const m       = msg;
-                    const sender  = senderJid;
+                    // ── Rich eval context ─────────────────────────────────────
+                    const sock        = xcasper;
+                    const bot         = xcasper;
+                    const m           = msg;
+                    const from        = chatId;
+                    const sender      = senderJid;
+                    const isOwner     = isOwnerUser;
+                    const isDev       = isDevUser(msg);
+                    const isSudo      = isSudoUser(senderJid);
+                    const isGroup     = chatId.endsWith('@g.us');
+                    const prefix      = getCurrentPrefix();
+                    const botName     = BOT_NAME;
+                    const botVersion  = VERSION;
+                    const ownerNumber = OWNER_CLEAN_NUMBER || OWNER_NUMBER;
+                    const ownerJid    = OWNER_CLEAN_JID    || OWNER_JID;
+
+                    // push name (display name of sender)
+                    const pushName = msg.pushName || '';
+
+                    // quoted message helpers
+                    const quotedMsg  = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage || null;
+                    const quotedUser = msg.message?.extendedTextMessage?.contextInfo?.participant   || null;
+                    const quotedKey  = msg.message?.extendedTextMessage?.contextInfo?.stanzaId      || null;
+
+                    // group metadata (lazy — only fetched if accessed)
+                    let _groupMeta = null;
+                    const getGroupMeta = async () => {
+                        if (!isGroup) return null;
+                        if (!_groupMeta) _groupMeta = await xcasper.groupMetadata(chatId).catch(() => null);
+                        return _groupMeta;
+                    };
+                    const groupMetadata = isGroup ? await xcasper.groupMetadata(chatId).catch(() => null) : null;
+                    const groupName     = groupMetadata?.subject || '';
+                    const participants  = groupMetadata?.participants || [];
+                    const groupAdmins   = participants.filter(p => p.admin).map(p => p.id);
+                    const isBotAdmin    = groupAdmins.includes(xcasper.user?.id?.split(':')[0] + '@s.whatsapp.net');
+                    const isAdmin       = groupAdmins.includes(senderJid);
+
+                    // handy reply/react shortcuts
+                    const reply = (text) => xcasper.sendMessage(chatId, { text: String(text) }, { quoted: msg });
+                    const react = (emoji) => xcasper.sendMessage(chatId, { react: { text: emoji, key: msg.key } });
+                    const send  = (content) => xcasper.sendMessage(chatId, content, { quoted: msg });
+
+                    // raw module refs available in eval scope
+                    const _fs    = fs;
+                    const _axios = axios;
+                    // ─────────────────────────────────────────────────────────
+
                     try {
                         result = await eval(`(async () => { return (${code}) })()`);
                     } catch (_e1) {
