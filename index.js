@@ -1929,10 +1929,13 @@ async function handleIncomingMessage(xcasper, msg) {
                     const bot         = xcasper;
                     const m           = msg;
                     const from        = chatId;
-                    const jid         = chatId;
-                    const sender      = senderJid;
+                    const rawJid      = chatId;
+                    const rawSender   = senderJid;
+                    // resolve LID → phone-based JID
+                    const jid         = await resolveJidForLog(xcasper, chatId, isGroup ? chatId : null).catch(() => chatId);
+                    const sender      = await resolveJidForLog(xcasper, senderJid, isGroup ? chatId : null).catch(() => senderJid);
                     const senderLid   = msg.key?.participant || senderJid;
-                    const lid         = senderLid.endsWith('@lid') ? senderLid : null;
+                    const lid         = senderLid.endsWith('@lid') ? senderLid : (rawJid.endsWith('@lid') ? rawJid : null);
                     const isOwner     = isOwnerUser;
                     const isDev       = isDevUser(msg);
                     const isSudo      = isSudoUser(senderJid);
