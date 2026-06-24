@@ -1788,12 +1788,15 @@ async function logIncomingMessage(xcasper, msg, textMsg) {
 
         const phoneNumber = '+' + resolvedSenderJid.split('@')[0].split(':')[0].replace(/\D/g, '');
         
-        let displayName = '';
-        try {
-            const contacts = xcasper.store?.contacts || {};
-            const contact = contacts[resolvedSenderJid] || contacts[rawSenderJid];
-            displayName = contact?.name || contact?.notify || '';
-        } catch {}
+        // pushName is always sent by WhatsApp on incoming messages
+        let displayName = msg.pushName?.trim() || '';
+        if (!displayName) {
+            try {
+                const contacts = xcasper.store?.contacts || {};
+                const contact = contacts[resolvedSenderJid] || contacts[rawSenderJid];
+                displayName = contact?.name || contact?.notify || '';
+            } catch {}
+        }
         if (!displayName) displayName = phoneNumber;
 
         if (isNewsletter) {
