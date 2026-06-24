@@ -1838,7 +1838,7 @@ async function logIncomingMessage(xcasper, msg, textMsg) {
                 `├${line}\n` +
                 `│ 👤 ${chalk.blue.bold('Name   :')} ${displayName}\n` +
                 `│ ☎️  ${chalk.blue.bold('Number :')} ${phoneNumber}\n` +
-                `│ 🆔 ${chalk.blue.bold('JID    :')} ${resolvedSenderJid}\n` +
+                `│ 🆔 ${chalk.blue.bold('JID    :')} ${phoneNumber.replace('+', '')}@s.whatsapp.net\n` +
                 `│ 💬 ${chalk.blue.bold('Msg    :')} ${textMsg.substring(0, 80)}${textMsg.length > 80 ? '…' : ''}\n` +
                 `│ 🕒 ${chalk.blue.bold('Time   :')} ${timeStr}\n` +
                 `│ 📩 ${chalk.blue.bold('Type   :')} DM\n` +
