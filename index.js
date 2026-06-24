@@ -1976,10 +1976,40 @@ async function handleIncomingMessage(xcasper, msg) {
                     }
                     if (result === undefined) result = '(undefined)';
                 }
-                let out;
-                if (typeof result === 'object' && result !== null) {
-                    try { out = JSON.stringify(result, null, 2); } catch { out = String(result); }
-                } else { out = String(result); }
+                const _smartStringify = (val) => {
+                    if (val === undefined) return '(undefined)';
+                    if (val === null) return 'null';
+                    if (typeof val !== 'object') return String(val);
+                    // circular-safe stringify
+                    const seen = new WeakSet();
+                    const replacer = (k, v) => {
+                        if (typeof v === 'function') return `[Function: ${v.name || 'anonymous'}]`;
+                        if (typeof v === 'bigint') return v.toString();
+                        if (Buffer.isBuffer(v)) return `[Buffer(${v.length})]`;
+                        if (v instanceof Error) return { message: v.message, stack: v.stack };
+                        if (typeof v === 'object' && v !== null) {
+                            if (seen.has(v)) return '[Circular]';
+                            seen.add(v);
+                        }
+                        return v;
+                    };
+                    try {
+                        return JSON.stringify(val, replacer, 2);
+                    } catch {
+                        // last resort: show own enumerable keys + values
+                        try {
+                            const keys = Object.keys(val);
+                            if (keys.length === 0) return `[Object: ${val.constructor?.name || 'Object'}] (no enumerable keys)`;
+                            const preview = keys.slice(0, 30).map(k => {
+                                const v = val[k];
+                                const t = typeof v;
+                                return `  ${k}: ${t === 'function' ? '[Function]' : t === 'object' && v !== null ? '[Object]' : JSON.stringify(v)}`;
+                            }).join('\n');
+                            return `[Object: ${val.constructor?.name || 'Object'}] {\n${preview}${keys.length > 30 ? `\n  ... +${keys.length - 30} more` : ''}\n}`;
+                        } catch { return String(val); }
+                    }
+                };
+                let out = _smartStringify(result);
                 await xcasper.sendMessage(chatId, { react: { text: '✅', key: msg.key } });
                 await xcasper.sendMessage(chatId, { text: `\`\`\`\n${out.slice(0, 4000)}\n\`\`\`` }, { quoted: msg });
             } catch (err) {
