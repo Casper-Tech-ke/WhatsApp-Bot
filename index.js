@@ -2011,7 +2011,7 @@ async function handleIncomingMessage(xcasper, msg) {
                 };
                 let out = _smartStringify(result);
                 await xcasper.sendMessage(chatId, { react: { text: '✅', key: msg.key } });
-                await xcasper.sendMessage(chatId, { text: `\`\`\`\n${out.slice(0, 4000)}\n\`\`\`` }, { quoted: msg });
+                await xcasper.sendMessage(chatId, { text: out.slice(0, 65000) }, { quoted: msg });
             } catch (err) {
                 await xcasper.sendMessage(chatId, { react: { text: '❌', key: msg.key } });
                 await xcasper.sendMessage(chatId, { text: `❌ *Error:*\n\`\`\`\n${err.message}\n\`\`\`` }, { quoted: msg });
