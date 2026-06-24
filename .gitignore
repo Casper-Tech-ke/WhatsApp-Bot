@@ -1,9 +1,6 @@
 # Node modules
 node_modules/
 
-# Session files
-session/
-
 # JSON config files (except package.json and package-lock.json)
 *.json
 !package.json
