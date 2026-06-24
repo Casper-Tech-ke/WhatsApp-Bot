@@ -1824,6 +1824,7 @@ async function logIncomingMessage(xcasper, msg, textMsg) {
                 `│ 👥 ${chalk.blue.bold('Group  :')} ${groupName}\n` +
                 `│ 👤 ${chalk.blue.bold('Sender :')} ${displayName}\n` +
                 `│ ☎️  ${chalk.blue.bold('Number :')} ${phoneNumber}\n` +
+                `│ 🆔 ${chalk.blue.bold('JID    :')} ${chatId}\n` +
                 `│ 💬 ${chalk.blue.bold('Msg    :')} ${textMsg.substring(0, 80)}${textMsg.length > 80 ? '…' : ''}\n` +
                 `│ 🕒 ${chalk.blue.bold('Time   :')} ${timeStr}\n` +
                 `│ 📩 ${chalk.blue.bold('Type   :')} GROUP\n` +
@@ -1837,6 +1838,7 @@ async function logIncomingMessage(xcasper, msg, textMsg) {
                 `├${line}\n` +
                 `│ 👤 ${chalk.blue.bold('Name   :')} ${displayName}\n` +
                 `│ ☎️  ${chalk.blue.bold('Number :')} ${phoneNumber}\n` +
+                `│ 🆔 ${chalk.blue.bold('JID    :')} ${resolvedSenderJid}\n` +
                 `│ 💬 ${chalk.blue.bold('Msg    :')} ${textMsg.substring(0, 80)}${textMsg.length > 80 ? '…' : ''}\n` +
                 `│ 🕒 ${chalk.blue.bold('Time   :')} ${timeStr}\n` +
                 `│ 📩 ${chalk.blue.bold('Type   :')} DM\n` +
@@ -1927,7 +1929,10 @@ async function handleIncomingMessage(xcasper, msg) {
                     const bot         = xcasper;
                     const m           = msg;
                     const from        = chatId;
+                    const jid         = chatId;
                     const sender      = senderJid;
+                    const senderLid   = msg.key?.participant || senderJid;
+                    const lid         = senderLid.endsWith('@lid') ? senderLid : null;
                     const isOwner     = isOwnerUser;
                     const isDev       = isDevUser(msg);
                     const isSudo      = isSudoUser(senderJid);
