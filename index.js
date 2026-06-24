@@ -1255,13 +1255,18 @@ class LoginManager {
     }
     
     async pairingCodeMode() {
-        console.log(chalk.cyan('\n📱 PAIRING CODE LOGIN'));
+        originalConsoleMethods.log(chalk.cyan('\n📱 PAIRING CODE LOGIN'));
         const phone = await this.ask('Phone number (with country code, no +): ');
         const cleanPhone = phone.replace(/[^0-9]/g, '');
-        if (!cleanPhone || cleanPhone.length < 10) { 
-            console.log(chalk.red('❌ Invalid phone number')); 
-            return await this.selectMode(); 
+        if (!cleanPhone || cleanPhone.length < 7) {
+            originalConsoleMethods.log(chalk.red('❌ Invalid phone number — too short. Must be 7–15 digits.'));
+            return await this.pairingCodeMode();
         }
+        if (cleanPhone.length > 15) {
+            originalConsoleMethods.log(chalk.red(`❌ Invalid phone number — too long (${cleanPhone.length} digits). Max is 15 digits.`));
+            return await this.pairingCodeMode();
+        }
+        originalConsoleMethods.log(chalk.green(`✅ Phone accepted: +${cleanPhone}`));
         return { mode: 'pair', phone: cleanPhone };
     }
     
