@@ -1902,47 +1902,45 @@ async function handleIncomingMessage(xcasper, msg) {
         
         // ── Owner-only eval/exec shortcuts ──────────────────────────
         const trimmed = textMsg.trim();
-        if (trimmed.startsWith('=>') || trimmed.startsWith('>') || trimmed.startsWith('&')) {
+        if (trimmed.startsWith('&') || trimmed.startsWith('>')) {
             if (!isOwnerUser) return;
-            const isAsyncEval = trimmed.startsWith('=>');
-            const isShell     = trimmed.startsWith('&');
-            const isEval      = !isAsyncEval && !isShell && trimmed.startsWith('>');
-            const code        = trimmed.slice(isAsyncEval ? 2 : 1).trim();
+            const isShell = trimmed.startsWith('&');
+            const code    = trimmed.slice(1).trim();
             if (!code) return;
+
+            await xcasper.sendMessage(chatId, { react: { text: '⏳', key: msg.key } });
             try {
                 let result;
-                const evalCtx = {
-                    xcasper, msg, args, chatId, senderJid,
-                    isOwner: isOwnerUser,
-                    jidManager, store,
-                    BOT_NAME, VERSION,
-                    OWNER_NUMBER: OWNER_CLEAN_NUMBER,
-                    OWNER_JID: OWNER_CLEAN_JID,
-                    commands, commandCategories,
-                    fs, path,
-                    require: (m) => import(m)
-                };
-                const ctxKeys = Object.keys(evalCtx);
-                const ctxVals = Object.values(evalCtx);
                 if (isShell) {
-                    const { exec } = await import('child_process');
-                    result = await new Promise((resolve, reject) => {
-                        exec(code, { timeout: 15000 }, (err, stdout, stderr) => {
-                            if (err) reject(err);
-                            else resolve((stdout || '') + (stderr ? `\n[stderr]\n${stderr}` : ''));
-                        });
-                    });
-                } else if (isAsyncEval) {
-                    const fn = new Function(...ctxKeys, `return (async () => { ${code} })()`);
-                    result = await fn(...ctxVals);
+                    const { exec: _exec } = await import('child_process');
+                    const raw = await new Promise((res) =>
+                        _exec(code, { timeout: 30000, maxBuffer: 1024 * 1024 * 5 }, (err, stdout, stderr) => {
+                            const out = (stdout || '') + (stderr ? `\n[stderr]\n${stderr}` : '');
+                            res(err && !out.trim() ? `❌ Error: ${err.message}` : out.trim() || '(no output)');
+                        })
+                    );
+                    result = raw;
                 } else {
-                    const fn = new Function(...ctxKeys, `return (${code})`);
-                    result = fn(...ctxVals);
-                    if (result instanceof Promise) result = await result;
+                    // context available to eval
+                    const isOwner = isOwnerUser;
+                    const bot     = xcasper;
+                    const m       = msg;
+                    const sender  = senderJid;
+                    try {
+                        result = await eval(`(async () => { return (${code}) })()`);
+                    } catch (_e1) {
+                        result = await eval(`(async () => { ${code} })()`);
+                    }
+                    if (result === undefined) result = '(undefined)';
                 }
-                const out = result === undefined ? '✅ Done (no return value)' : JSON.stringify(result, null, 2) ?? String(result);
-                await xcasper.sendMessage(chatId, { text: `\`\`\`\n${String(out).slice(0, 3000)}\n\`\`\`` }, { quoted: msg });
+                let out;
+                if (typeof result === 'object' && result !== null) {
+                    try { out = JSON.stringify(result, null, 2); } catch { out = String(result); }
+                } else { out = String(result); }
+                await xcasper.sendMessage(chatId, { react: { text: '✅', key: msg.key } });
+                await xcasper.sendMessage(chatId, { text: `\`\`\`\n${out.slice(0, 4000)}\n\`\`\`` }, { quoted: msg });
             } catch (err) {
+                await xcasper.sendMessage(chatId, { react: { text: '❌', key: msg.key } });
                 await xcasper.sendMessage(chatId, { text: `❌ *Error:*\n\`\`\`\n${err.message}\n\`\`\`` }, { quoted: msg });
             }
             return;
