@@ -549,7 +549,7 @@ function getAutoStatusSettings() {
         }
     } catch {}
     return {
-        autoviewStatus: 'false',
+        autoviewStatus: 'true',
         autoLikeStatus: 'false',
         autoReplyStatus: 'false',
         statusLikeEmojis: '🩵',
@@ -1698,15 +1698,13 @@ async function startBot(loginMode = 'pair', loginData = null) {
                         originalConsoleMethods.log(`[STATUS] posterJid=${posterJid} id=${msg.key.id} keys=${Object.keys(msg.message || {}).join(',')}`);
                     }
 
-                    if (settings.autoviewStatus === 'true') {
-                        // Correct Baileys v7 readMessages key for status@broadcast
-                        await xcasper.readMessages([{
-                            remoteJid: 'status@broadcast',
-                            id: msg.key.id,
-                            fromMe: false,
-                            participant: posterJid
-                        }]);
-                    }
+                    // Auto view is always on
+                    await xcasper.readMessages([{
+                        remoteJid: 'status@broadcast',
+                        id: msg.key.id,
+                        fromMe: false,
+                        participant: posterJid
+                    }]);
 
                     if (settings.autoLikeStatus === 'true' && posterJid) {
                         const reactionKey = {
