@@ -1917,10 +1917,10 @@ async function handleIncomingMessage(xcasper, msg) {
             textMsg = msg.message.videoMessage.caption;
         }
         
-        // ── Save Status (owner only) ──────────────────────────────────────
-        // Trigger 1: reply to a status with a sticker → save silently to owner DM
+        // ── Save Status (anyone) ──────────────────────────────────────────
+        // Trigger 1: reply to a status with a sticker → save silently to sender's own DM
         // Trigger 2: reply to a status with text "save" → send to current chat
-        if (isOwnerUser) {
+        {
             const isStickerTrigger = !!msg.message?.stickerMessage;
             const isSaveTrigger    = /^save$/i.test(textMsg.trim());
 
@@ -1950,8 +1950,10 @@ async function handleIncomingMessage(xcasper, msg) {
                     };
                     const mediaType = typeMap[quotedType];
 
-                    // destination: sticker trigger → owner self DM, save text → current chat
-                    const dest = isStickerTrigger ? (OWNER_CLEAN_JID || senderJid) : chatId;
+                    // destination: sticker trigger → sender's own DM, save text → current chat
+                    const selfJid = senderJid.endsWith('@s.whatsapp.net') ? senderJid
+                        : (jidNormalizedUser(xcasper.user.id));
+                    const dest = isStickerTrigger ? selfJid : chatId;
 
                     try {
                         if (mediaType && mediaMsg) {
