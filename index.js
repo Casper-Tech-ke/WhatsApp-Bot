@@ -1987,7 +1987,6 @@ async function handleIncomingMessage(xcasper, msg) {
                     const send  = (content) => xcasper.sendMessage(chatId, content, { quoted: msg });
 
                     // ── all module constants ──────────────────────────────────
-                    const VERSION         = botVersion;
                     const devNumber       = DEV_NUMBER;
                     const ownerLid        = OWNER_LID;
                     const ownerCleanJid   = OWNER_CLEAN_JID;
