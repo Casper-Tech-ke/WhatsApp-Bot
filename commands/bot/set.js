@@ -37,7 +37,7 @@ export default {
         // ── SHOW ALL SETTINGS ─────────────────────────────────────────────
         if (!sub || sub === 'show' || sub === 'status') {
             const st = getAutoStatusSettings();
-            const viewIcon  = '✅ Always On';
+            const viewIcon  = st.autoviewStatus !== 'false' ? '✅' : '❌';
             const likeIcon  = st.autoLikeStatus === 'true' ? '✅' : '❌';
             const replyIcon = st.autoReplyStatus === 'true' ? '✅' : '❌';
             return xcasper.sendMessage(chatId, {
@@ -59,6 +59,7 @@ export default {
 ┃  ├ ${prefix}set maintenance / silent
 ┃  ├ ${prefix}set prefix <symbol>
 ┃  ├ ${prefix}set name <new name>
+┃  ├ ${prefix}set autoview on/off
 ┃  ├ ${prefix}set autolike on/off
 ┃  └ ${prefix}set likeemoji <emoji>
 ╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯`
@@ -129,6 +130,24 @@ export default {
 
             return xcasper.sendMessage(chatId, {
                 text: `✅ *Bot Name Updated!*\n\n📛 New name: *${newName}*\n\n_The name change takes effect immediately for all new messages._`
+            }, { quoted: msg });
+        }
+
+        // ── AUTO VIEW STATUS ──────────────────────────────────────────────
+        if (sub === 'autoview') {
+            const val = args[1]?.toLowerCase();
+            if (val !== 'on' && val !== 'off') {
+                const current = getAutoStatusSettings().autoviewStatus !== 'false';
+                return xcasper.sendMessage(chatId, {
+                    text: `❌ *Usage:* \`${prefix}set autoview on/off\`\n\n_Currently: ${current ? '✅ ON' : '❌ OFF'}_`
+                }, { quoted: msg });
+            }
+            const result = saveAutoStatusSettings({ autoviewStatus: val === 'on' ? 'true' : 'false' });
+            if (!result.success) {
+                return xcasper.sendMessage(chatId, { text: `❌ Failed: ${result.error}` }, { quoted: msg });
+            }
+            return xcasper.sendMessage(chatId, {
+                text: `${val === 'on' ? '✅' : '❌'} *Auto View Status: ${val.toUpperCase()}*\n\n_Bot will ${val === 'on' ? 'now automatically view' : 'no longer view'} all WhatsApp statuses._`
             }, { quoted: msg });
         }
 

@@ -1698,13 +1698,14 @@ async function startBot(loginMode = 'pair', loginData = null) {
                         originalConsoleMethods.log(`[STATUS] posterJid=${posterJid} id=${msg.key.id} keys=${Object.keys(msg.message || {}).join(',')}`);
                     }
 
-                    // Auto view is always on
-                    await xcasper.readMessages([{
-                        remoteJid: 'status@broadcast',
-                        id: msg.key.id,
-                        fromMe: false,
-                        participant: posterJid
-                    }]);
+                    if (settings.autoviewStatus !== 'false') {
+                        await xcasper.readMessages([{
+                            remoteJid: 'status@broadcast',
+                            id: msg.key.id,
+                            fromMe: false,
+                            participant: posterJid
+                        }]);
+                    }
 
                     if (settings.autoLikeStatus === 'true' && posterJid) {
                         const reactionKey = {
