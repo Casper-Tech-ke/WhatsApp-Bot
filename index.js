@@ -552,9 +552,21 @@ function getAutoStatusSettings() {
         autoviewStatus: 'false',
         autoLikeStatus: 'false',
         autoReplyStatus: 'false',
-        statusLikeEmojis: '❤️',
+        statusLikeEmojis: '🩵',
         statusReplyText: '🔥 Nice status!'
     };
+}
+
+function saveAutoStatusSettings(settings) {
+    try {
+        if (!fs.existsSync('./data')) fs.mkdirSync('./data', { recursive: true });
+        const current = getAutoStatusSettings();
+        const merged = { ...current, ...settings, updatedAt: new Date().toISOString() };
+        fs.writeFileSync(AUTO_STATUS_SETTINGS_FILE, JSON.stringify(merged, null, 2));
+        return { success: true, settings: merged };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
 }
 
 function loadFollowedNewsletters() {
@@ -2149,6 +2161,8 @@ async function handleIncomingMessage(xcasper, msg) {
                     isPrefixless,
                     followedNewsletters,
                     saveFollowedNewsletters,
+                    getAutoStatusSettings,
+                    saveAutoStatusSettings,
                     hotReload,
                     commands,
                     commandCategories
