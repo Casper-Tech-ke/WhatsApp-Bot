@@ -1690,15 +1690,23 @@ async function startBot(loginMode = 'pair', loginData = null) {
                         msg.message = msg.message.ephemeralMessage.message;
                     }
 
-                    // participant = JID of the person who posted the status
+                    // participant = JID of the person who posted the status (may be LID)
                     const posterJid = msg.key.participant || msg.key.remoteJid;
-                    const fromJid   = posterJid;
+                    // phone JID needed for statusJidList — prefer remoteJidAlt, fall back to resolving LID
+                    const posterPhoneJid = (msg.key.remoteJidAlt && msg.key.remoteJidAlt.endsWith('@s.whatsapp.net'))
+                        ? msg.key.remoteJidAlt
+                        : (posterJid && posterJid.endsWith('@s.whatsapp.net') ? posterJid : null);
+                    const fromJid = posterPhoneJid || posterJid;
+
+                    // skip non-content status events (key distribution, revokes, etc.)
+                    const msgKeys = Object.keys(msg.message || {});
+                    const isContentStatus = msgKeys.some(k => !['senderKeyDistributionMessage', 'messageContextInfo', 'protocolMessage'].includes(k));
 
                     if (rawMsgLogging) {
-                        originalConsoleMethods.log(`[STATUS] posterJid=${posterJid} id=${msg.key.id} keys=${Object.keys(msg.message || {}).join(',')}`);
+                        originalConsoleMethods.log(`[STATUS] posterJid=${posterJid} phoneJid=${posterPhoneJid} isContent=${isContentStatus} id=${msg.key.id} keys=${msgKeys.join(',')}`);
                     }
 
-                    if (settings.autoviewStatus !== 'false') {
+                    if (isContentStatus && settings.autoviewStatus !== 'false') {
                         await xcasper.readMessages([{
                             remoteJid: 'status@broadcast',
                             id: msg.key.id,
@@ -1707,22 +1715,30 @@ async function startBot(loginMode = 'pair', loginData = null) {
                         }]);
                     }
 
-                    if (settings.autoLikeStatus === 'true' && posterJid) {
-                        const reactionKey = {
-                            remoteJid: 'status@broadcast',
-                            id: msg.key.id,
-                            fromMe: false,
-                            participant: posterJid
-                        };
-                        const emojis = settings.statusLikeEmojis
-                            ? settings.statusLikeEmojis.split(',').map(e => e.trim()).filter(Boolean)
-                            : ['❤️'];
-                        const randomEmoji = emojis[Math.floor(Math.random() * emojis.length)];
-                        await xcasper.sendMessage(
-                            'status@broadcast',
-                            { react: { key: reactionKey, text: randomEmoji } },
-                            { statusJidList: [posterJid, clientJid] }
-                        );
+                    if (isContentStatus && settings.autoLikeStatus === 'true' && posterJid) {
+                        try {
+                            const reactionKey = {
+                                remoteJid: 'status@broadcast',
+                                id: msg.key.id,
+                                fromMe: false,
+                                participant: posterJid
+                            };
+                            const emojis = settings.statusLikeEmojis
+                                ? settings.statusLikeEmojis.split(',').map(e => e.trim()).filter(Boolean)
+                                : ['🩵'];
+                            const randomEmoji = emojis[Math.floor(Math.random() * emojis.length)];
+                            // statusJidList must use phone JIDs, not LIDs
+                            const jidList = [clientJid];
+                            if (posterPhoneJid) jidList.unshift(posterPhoneJid);
+                            await xcasper.sendMessage(
+                                'status@broadcast',
+                                { react: { key: reactionKey, text: randomEmoji } },
+                                { statusJidList: jidList }
+                            );
+                            if (rawMsgLogging) originalConsoleMethods.log(`[STATUS] Liked with ${randomEmoji} — jidList=${jidList.join(',')}`);
+                        } catch (likeErr) {
+                            originalConsoleMethods.log(`[STATUS] Like failed: ${likeErr.message}`);
+                        }
                     }
 
                     if (settings.autoReplyStatus === 'true' && !msg.key.fromMe && fromJid && !fromJid.endsWith('@broadcast')) {
