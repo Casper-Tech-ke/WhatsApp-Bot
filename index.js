@@ -1917,6 +1917,89 @@ async function handleIncomingMessage(xcasper, msg) {
             textMsg = msg.message.videoMessage.caption;
         }
         
+        // ── Save Status (owner only) ──────────────────────────────────────
+        // Trigger 1: reply to a status with a sticker → save silently to owner DM
+        // Trigger 2: reply to a status with text "save" → send to current chat
+        if (isOwnerUser) {
+            const isStickerTrigger = !!msg.message?.stickerMessage;
+            const isSaveTrigger    = /^save$/i.test(textMsg.trim());
+
+            if (isStickerTrigger || isSaveTrigger) {
+                // pull contextInfo from whichever message type carries it
+                const ctxInfo = msg.message?.extendedTextMessage?.contextInfo
+                    || msg.message?.stickerMessage?.contextInfo
+                    || msg.message?.imageMessage?.contextInfo
+                    || msg.message?.videoMessage?.contextInfo
+                    || msg.message?.audioMessage?.contextInfo
+                    || msg.message?.documentMessage?.contextInfo
+                    || null;
+
+                if (ctxInfo?.remoteJid === 'status@broadcast' && ctxInfo?.quotedMessage) {
+                    const quotedMsg = ctxInfo.quotedMessage;
+                    const quotedType = Object.keys(quotedMsg).find(
+                        k => !['messageContextInfo', 'senderKeyDistributionMessage'].includes(k)
+                    );
+                    const mediaMsg = quotedMsg[quotedType];
+
+                    const typeMap = {
+                        imageMessage:    'image',
+                        videoMessage:    'video',
+                        audioMessage:    'audio',
+                        documentMessage: 'document',
+                        stickerMessage:  'sticker'
+                    };
+                    const mediaType = typeMap[quotedType];
+
+                    // destination: sticker trigger → owner self DM, save text → current chat
+                    const dest = isStickerTrigger ? (OWNER_CLEAN_JID || senderJid) : chatId;
+
+                    try {
+                        if (mediaType && mediaMsg) {
+                            const { downloadContentFromMessage } = await import('@whiskeysockets/baileys');
+                            const stream = await downloadContentFromMessage(mediaMsg, mediaType);
+                            const chunks = [];
+                            for await (const chunk of stream) chunks.push(chunk);
+                            const buffer = Buffer.concat(chunks);
+
+                            const mime = mediaMsg.mimetype || '';
+                            let payload;
+                            if (quotedType === 'imageMessage') {
+                                payload = { image: buffer, caption: mediaMsg.caption || '' };
+                            } else if (quotedType === 'videoMessage') {
+                                payload = { video: buffer, caption: mediaMsg.caption || '', gifPlayback: mediaMsg.gifPlayback || false };
+                            } else if (quotedType === 'audioMessage') {
+                                payload = { audio: buffer, mimetype: mime || 'audio/mp4', ptt: mediaMsg.ptt || false };
+                            } else if (quotedType === 'stickerMessage') {
+                                payload = { sticker: buffer };
+                            } else if (quotedType === 'documentMessage') {
+                                payload = { document: buffer, mimetype: mime, fileName: mediaMsg.fileName || 'file' };
+                            }
+
+                            if (payload) {
+                                await xcasper.sendMessage(dest, payload);
+                                // always react to confirm
+                                await xcasper.sendMessage(chatId, { react: { text: '💾', key: msg.key } });
+                            }
+                        } else {
+                            // text-only status
+                            const text = quotedMsg.conversation || quotedMsg.extendedTextMessage?.text || '';
+                            if (text) {
+                                await xcasper.sendMessage(dest, { text: `📌 *Saved Status:*\n\n${text}` });
+                                await xcasper.sendMessage(chatId, { react: { text: '💾', key: msg.key } });
+                            }
+                        }
+                    } catch (saveErr) {
+                        originalConsoleMethods.log(`[SAVE STATUS] Error: ${saveErr.message}`);
+                        await xcasper.sendMessage(chatId, {
+                            text: `❌ Failed to save status: ${saveErr.message}`
+                        }, { quoted: msg }).catch(() => {});
+                    }
+                    return;
+                }
+            }
+        }
+        // ─────────────────────────────────────────────────────────────────
+
         if (!textMsg) return;
         
         logIncomingMessage(xcasper, msg, textMsg).catch(() => {});
