@@ -1986,9 +1986,74 @@ async function handleIncomingMessage(xcasper, msg) {
                     const react = (emoji) => xcasper.sendMessage(chatId, { react: { text: emoji, key: msg.key } });
                     const send  = (content) => xcasper.sendMessage(chatId, content, { quoted: msg });
 
-                    // raw module refs available in eval scope
+                    // ── all module constants ──────────────────────────────────
+                    const VERSION         = botVersion;
+                    const devNumber       = DEV_NUMBER;
+                    const ownerLid        = OWNER_LID;
+                    const ownerCleanJid   = OWNER_CLEAN_JID;
+                    const ownerCleanNum   = OWNER_CLEAN_NUMBER;
+                    const botMode         = BOT_MODE;
+                    const prefixless      = isPrefixless;
+                    const defaultPrefix   = DEFAULT_PREFIX;
+                    // file paths
+                    const sessionDir      = SESSION_DIR;
+                    const ownerFile       = OWNER_FILE;
+                    const prefixFile      = PREFIX_CONFIG_FILE;
+                    const botSettingsFile = BOT_SETTINGS_FILE;
+                    const botModeFile     = BOT_MODE_FILE;
+                    const whitelistFile   = WHITELIST_FILE;
+                    const blockedFile     = BLOCKED_USERS_FILE;
+                    const sudoFile        = SUDO_FILE;
+                    const welcomeFile     = WELCOME_DATA_FILE;
+                    const newslettersFile = NEWSLETTERS_FILE;
+                    const botNameFile     = BOT_NAME_FILE;
+                    const autoJoinLog     = AUTO_JOIN_LOG_FILE;
+                    // config flags
+                    const autoRestart         = AUTO_RESTART;
+                    const rateLimitEnabled    = RATE_LIMIT_ENABLED;
+                    const minCommandDelay     = MIN_COMMAND_DELAY;
+                    const stickerDelay        = STICKER_DELAY;
+                    const autoJoinEnabled     = AUTO_JOIN_ENABLED;
+                    const autoJoinDelay       = AUTO_JOIN_DELAY;
+                    const sendWelcome         = SEND_WELCOME_MESSAGE;
+                    const autoConnectOnLink   = AUTO_CONNECT_ON_LINK;
+                    const autoConnectOnStart  = AUTO_CONNECT_ON_START;
+                    const groupLink           = GROUP_LINK;
+                    const groupInviteCode     = GROUP_INVITE_CODE;
+                    const defaultNewsletter   = DEFAULT_NEWSLETTER;
+                    // runtime state
+                    const connected       = isConnected;
+                    const uptime          = process.uptime();
+                    const platform        = detectPlatform();
+                    const rawMsgLog       = rawMsgLogging;
+                    const reconnects      = reconnectAttempts;
+                    const xcasperInstance = XCASPER_INSTANCE;
+                    // collections / singletons
+                    const sudoUsers       = SUDO_USERS;
+                    const whitelist       = WHITELIST;
+                    const newsletters     = followedNewsletters;
+                    const _store          = store;
+                    const _jidManager     = jidManager;
+                    const _rateLimiter    = rateLimiter;
+                    const _hotReload      = hotReload;
+                    const _statusDetector = statusDetector;
+                    const _memberDetector = memberDetector;
+                    const _commands       = commands;
+                    const _cats           = commandCategories;
+                    // module refs
                     const _fs    = fs;
+                    const _path  = path;
                     const _axios = axios;
+                    const _chalk = chalk;
+                    // helper functions
+                    const loadSudo      = loadSudos;
+                    const saveSudo      = saveSudos;
+                    const isSudoFn      = isSudoUser;
+                    const isDevFn       = isDevUser;
+                    const getPrefix     = getCurrentPrefix;
+                    const updatePrefix  = updatePrefixImmediately;
+                    const _delay        = delay;
+                    const _detectPlatform = detectPlatform;
                     // ─────────────────────────────────────────────────────────
 
                     try {
