@@ -184,6 +184,7 @@ export default {
                 try {
                     // Step 1: resolve invite code → JID + metadata
                     const meta = await xcasper.newsletterMetadata('invite', parsed.id);
+                    console.log('[CHECKID DEBUG] raw newsletter meta:', JSON.stringify(meta, null, 2));
                     if (meta) {
                         // meta.id already contains full JID (e.g. "120363...@newsletter")
                         const rawId = meta.id || '';
