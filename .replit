@@ -10,7 +10,7 @@ channel = "stable-25_05"
 
 [userenv.shared]
 BOT_NAME = "ALICIAH AI"
-PREFIX = "."
+BOT_PREFIX = "."
 AUTO_RESTART = "false"
 
 [workflows]
