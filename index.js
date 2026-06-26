@@ -86,7 +86,7 @@ const SESSION_DIR = './session';
 let BOT_NAME = process.env.BOT_NAME || 'ALICIAH AI';
 const BOT_NAME_FILE = './data/botname.json';
 const VERSION = '2.0.0';
-const DEFAULT_PREFIX = process.env.PREFIX || '.';
+const DEFAULT_PREFIX = process.env.BOT_PREFIX || '.';
 const OWNER_FILE = './owner.json';
 const PREFIX_CONFIG_FILE = './prefix_config.json';
 const BOT_SETTINGS_FILE = './bot_settings.json';
@@ -267,7 +267,7 @@ function updatePrefixImmediately(newPrefix) {
         prefixCache = newPrefix.trim(); isPrefixless = false;
     }
     if (typeof global !== 'undefined') { global.prefix = getCurrentPrefix(); global.CURRENT_PREFIX = getCurrentPrefix(); global.isPrefixless = isPrefixless; }
-    process.env.PREFIX = getCurrentPrefix();
+    process.env.BOT_PREFIX = getCurrentPrefix();
     savePrefixToFile(newPrefix);
     prefixHistory.push({ oldPrefix: oldIsPrefixless ? 'none' : oldPrefix, newPrefix: isPrefixless ? 'none' : prefixCache, isPrefixless, oldIsPrefixless, timestamp: new Date().toISOString(), time: Date.now() });
     if (prefixHistory.length > 10) prefixHistory = prefixHistory.slice(-10);
