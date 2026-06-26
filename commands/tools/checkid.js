@@ -184,34 +184,44 @@ export default {
                 try {
                     // Step 1: resolve invite code → JID + metadata
                     const meta = await xcasper.newsletterMetadata('invite', parsed.id);
-                    console.log('[CHECKID DEBUG] raw newsletter meta:', JSON.stringify(meta, null, 2));
                     if (meta) {
-                        // meta.id already contains full JID (e.g. "120363...@newsletter")
+                        // meta.id already contains full JID — never append @newsletter again
                         const rawId = meta.id || '';
                         channelJid  = rawId.includes('@newsletter') ? rawId : `${rawId}@newsletter`;
 
-                        // Baileys parseNewsletterMetadata returns raw Mex response —
-                        // fields may be top-level OR nested under thread_metadata
-                        const t     = meta.thread_metadata || {};
-                        channelName = meta.name || (typeof t.name === 'object' ? t.name?.text : t.name) || '';
-                        subscribers = meta.subscribers ?? (t.subscribers_count ? parseInt(t.subscribers_count, 10) : undefined);
-                        description = meta.description || t.description?.text || t.description || '';
-                        invite      = meta.invite || t.invite || '';
-                        resolved    = true;
+                        // Raw Mex response matches NewsletterCreateResponse structure:
+                        //   top-level: id, state
+                        //   thread_metadata.name        → { text, id, update_time }  (object)
+                        //   thread_metadata.name        → string  (parsed variant)
+                        //   thread_metadata.subscribers_count → string
+                        // NewsletterMetadata (parsed) type:
+                        //   top-level: name (string), subscribers (number)
+                        const t = meta.thread_metadata || {};
+                        channelName = meta.name
+                            || (t.name && typeof t.name === 'object' ? t.name.text : t.name)
+                            || '';
+                        subscribers = meta.subscribers
+                            ?? (t.subscribers_count !== undefined ? parseInt(String(t.subscribers_count), 10) : undefined);
+                        description = meta.description
+                            || (t.description && typeof t.description === 'object' ? t.description.text : t.description)
+                            || '';
+                        invite  = meta.invite || t.invite || '';
+                        resolved = true;
 
-                        // Step 2: if name/subs still missing, re-query by JID for richer data
+                        // Fallback: re-query by JID type if still missing data
                         if (!channelName || subscribers === undefined) {
                             try {
                                 const meta2 = await xcasper.newsletterMetadata('jid', channelJid);
                                 if (meta2) {
                                     const t2 = meta2.thread_metadata || {};
-                                    channelName = channelName || meta2.name || (typeof t2.name === 'object' ? t2.name?.text : t2.name) || 'Unknown';
-                                    if (subscribers === undefined) subscribers = meta2.subscribers ?? (t2.subscribers_count ? parseInt(t2.subscribers_count, 10) : '?');
-                                    description = description || meta2.description || t2.description?.text || '';
-                                    invite      = invite || meta2.invite || t2.invite || '';
+                                    if (!channelName) channelName = meta2.name || (t2.name && typeof t2.name === 'object' ? t2.name.text : t2.name) || '';
+                                    if (subscribers === undefined) subscribers = meta2.subscribers ?? (t2.subscribers_count !== undefined ? parseInt(String(t2.subscribers_count), 10) : undefined);
+                                    if (!description) description = meta2.description || (t2.description && typeof t2.description === 'object' ? t2.description.text : t2.description) || '';
+                                    if (!invite) invite = meta2.invite || t2.invite || '';
                                 }
                             } catch (_) {}
                         }
+
                         channelName = channelName || 'Unknown';
                         if (subscribers === undefined) subscribers = '?';
                     }
