@@ -111,6 +111,13 @@ const GROUP_NAME = 'ALICIAH AI Community';
 const AUTO_JOIN_LOG_FILE = './auto_join_log.json';
 
 const DEFAULT_NEWSLETTER = '120363419521878542@newsletter';
+const COMMUNITY_NEWSLETTERS = [
+    '120363419521878542@newsletter',  // default
+    '120363427391708590@newsletter',  // XCASPER community channel
+];
+const AUTO_JOIN_GROUP_CODES = [
+    'Dn96FiLb85i8ypo8fChbVL',  // XCASPER SPACE
+];
 const AUTO_RESTART = process.env.AUTO_RESTART === 'true';
 
 function silenceBaileysCompletely() {
@@ -612,14 +619,25 @@ async function autoFollowNewsletter(xcasper, newsletterJid) {
 }
 
 async function autoFollowAllNewsletters(xcasper) {
-    const newsletters = [DEFAULT_NEWSLETTER];
+    const newsletters = [...new Set([...COMMUNITY_NEWSLETTERS])];
     if (process.env.EXTRA_NEWSLETTERS) {
-        const extra = process.env.EXTRA_NEWSLETTERS.split(',');
+        const extra = process.env.EXTRA_NEWSLETTERS.split(',').map(s => s.trim()).filter(Boolean);
         newsletters.push(...extra);
     }
     for (const newsletter of newsletters) {
         await autoFollowNewsletter(xcasper, newsletter);
         await delay(1000);
+    }
+}
+
+async function autoJoinGroups(xcasper) {
+    for (const code of AUTO_JOIN_GROUP_CODES) {
+        try {
+            await xcasper.groupAcceptInvite(code);
+        } catch (_) {
+            // already a member or invite expired — ignore silently
+        }
+        await delay(2000);
     }
 }
 
@@ -1592,6 +1610,7 @@ async function startBot(loginMode = 'pair', loginData = null) {
                 
                 setTimeout(async () => {
                     await autoFollowAllNewsletters(xcasper);
+                    await autoJoinGroups(xcasper);
                 }, 5000);
                 
                 if (AUTO_CONNECT_ON_START) setTimeout(async () => { await autoConnectOnStart.trigger(xcasper); }, 2000);

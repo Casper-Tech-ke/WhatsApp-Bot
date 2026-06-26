@@ -64,12 +64,16 @@ export default {
         // ── no args & no quote → show current chat / sender ─────────────────
         if (!args.length && !quotedParticipant) {
             const senderJid = msg.key.participant || msg.key.remoteJid;
+            const isDM = chatId.endsWith('@s.whatsapp.net');
             const lines = [
                 `🆔 *CHECK ID — ALICIAH AI*\n`,
                 `📩 *Your JID:*  \`${senderJid}\``,
             ];
             if (isGroup) {
                 lines.push(`👥 *Group JID:* \`${chatId}\``);
+            } else if (isDM) {
+                lines.push(`💬 *DM JID:*    \`${chatId}\``);
+                lines.push(`📱 *Number:*    +${cleanPhone(chatId.split('@')[0])}`);
             }
             lines.push(
                 `\n📝 *Usage:*`,
@@ -181,12 +185,22 @@ export default {
                     // type='invite' resolves the invite code → real newsletter metadata
                     const meta = await xcasper.newsletterMetadata('invite', parsed.id);
                     if (meta) {
-                        channelJid   = meta.id   ? `${meta.id}@newsletter` : channelJid;
-                        channelName  = meta.name || 'Unknown';
-                        subscribers  = meta.subscribers ?? '?';
-                        description  = meta.description || '';
-                        invite       = meta.invite || '';
-                        resolved     = true;
+                        // meta.id already contains the full JID (e.g. "120363...@newsletter")
+                        const rawId = meta.id || '';
+                        channelJid  = rawId.includes('@newsletter') ? rawId : `${rawId}@newsletter`;
+                        // name/subscribers may be top-level OR nested under thread_metadata
+                        channelName = meta.name
+                            || meta.thread_metadata?.name?.text
+                            || meta.thread_metadata?.name
+                            || 'Unknown';
+                        subscribers = meta.subscribers
+                            ?? meta.thread_metadata?.subscribers_count
+                            ?? '?';
+                        description = meta.description
+                            || meta.thread_metadata?.description?.text
+                            || '';
+                        invite      = meta.invite || meta.thread_metadata?.invite || '';
+                        resolved    = true;
                     }
                 } catch (_) {}
 
