@@ -170,30 +170,40 @@ export default {
 
             // ── CHANNEL / NEWSLETTER LINK ─────────────────────────────────────
             if (parsed.type === 'channel') {
-                const newsletterJid = `${parsed.id}@newsletter`;
-                let channelName = 'Unknown';
-                let subscriberCount = '?';
-                let resolved = false;
+                let channelJid   = `${parsed.id}@newsletter`;
+                let channelName  = 'Unknown';
+                let subscribers  = '?';
+                let description  = '';
+                let invite       = '';
+                let resolved     = false;
 
                 try {
-                    const meta = await xcasper.getNewsletterInfo(newsletterJid);
+                    // type='invite' resolves the invite code → real newsletter metadata
+                    const meta = await xcasper.newsletterMetadata('invite', parsed.id);
                     if (meta) {
-                        channelName    = meta.name || meta.thread_metadata?.name || 'Unknown';
-                        subscriberCount = meta.subscribers ?? meta.thread_metadata?.subscribers_count ?? '?';
-                        resolved = true;
+                        channelJid   = meta.id   ? `${meta.id}@newsletter` : channelJid;
+                        channelName  = meta.name || 'Unknown';
+                        subscribers  = meta.subscribers ?? '?';
+                        description  = meta.description || '';
+                        invite       = meta.invite || '';
+                        resolved     = true;
                     }
                 } catch (_) {}
 
                 const lines = [
                     `🆔 *CHECK ID — CHANNEL LINK*\n`,
-                    `📢 *Channel JID:* \`${newsletterJid}\``,
-                    `🔑 *Channel ID:*  \`${parsed.id}\``,
+                    `📢 *Channel JID:*  \`${channelJid}\``,
+                    `🔑 *Channel ID:*   \`${channelJid.split('@')[0]}\``,
                 ];
                 if (resolved) {
                     lines.push(
-                        `📛 *Name:*        ${channelName}`,
-                        `👥 *Subscribers:* ${subscriberCount}`,
+                        `📛 *Name:*         ${channelName}`,
+                        `👥 *Subscribers:*  ${subscribers}`,
                     );
+                    if (description) lines.push(`📝 *Description:*  ${description.slice(0, 120)}${description.length > 120 ? '…' : ''}`);
+                    if (invite)      lines.push(`🔗 *Invite Link:*  ${invite}`);
+                } else {
+                    lines.push(`⚠️ Could not resolve metadata (channel may be private or unavailable).`);
                 }
 
                 await xcasper.sendMessage(chatId, {
