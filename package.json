@@ -18,15 +18,15 @@
     "ffmpeg": "^0.0.4",
     "file-type": "^21.3.4",
     "pptxgenjs": "^4.0.1",
-    "qrcode-terminal": "^0.12.0",
-    "stickers-formatter": "*",
-    "wa-sticker-formatter": "^4.4.4"
+    "qrcode-terminal": "^0.12.0"
   },
   "optionalDependencies": {
     "fluent-ffmpeg": "^2.1.3",
     "gifencoder": "^2.0.1",
     "node-webpmux": "^3.2.1",
-    "sharp": "^0.35.2"
+    "sharp": "^0.35.2",
+    "stickers-formatter": "*",
+    "wa-sticker-formatter": "^4.4.4"
   },
   "type": "module"
 }
