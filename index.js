@@ -97,6 +97,8 @@ const SUDO_FILE = './data/sudo.json';
 const DEV_NUMBER = '254732982940';
 const WELCOME_DATA_FILE = './data/welcome_data.json';
 const NEWSLETTERS_FILE = './data/newsletters.json';
+const GROUP_METADATA_FILE = './data/group_metadata.json';
+const NEWSLETTER_METADATA_FILE = './data/newsletter_metadata.json';
 const AUTO_CONNECT_ON_LINK = true;
 const AUTO_CONNECT_ON_START = true;
 const RATE_LIMIT_ENABLED = true;
@@ -388,6 +390,8 @@ let AUTO_CONNECT_COMMAND_ENABLED = true, AUTO_ULTIMATE_FIX_ENABLED = true;
 let isWaitingForPairingCode = false, RESTART_AUTO_FIX_ENABLED = true;
 let hasAutoConnectedOnStart = false;
 let followedNewsletters = new Set();
+const groupMetadataCache = new Map();      // jid → groupMetadata object
+const newsletterMetadataCache = new Map(); // jid → newsletter metadata object
 let hotReload = null;
 
 // RECONNECTION TRACKERS - NO MESSAGES
@@ -605,13 +609,109 @@ function saveFollowedNewsletters() {
     } catch (error) {}
 }
 
+// ── Group metadata cache ──────────────────────────────────────────────────────
+
+function loadGroupMetadataCache() {
+    try {
+        if (fs.existsSync(GROUP_METADATA_FILE)) {
+            const data = JSON.parse(fs.readFileSync(GROUP_METADATA_FILE, 'utf8'));
+            if (data.groups && typeof data.groups === 'object') {
+                for (const [jid, meta] of Object.entries(data.groups)) {
+                    groupMetadataCache.set(jid, meta);
+                }
+            }
+        }
+    } catch (_) {}
+}
+
+function saveGroupMetadataCache() {
+    try {
+        if (!fs.existsSync('./data')) fs.mkdirSync('./data', { recursive: true });
+        const groups = {};
+        for (const [jid, meta] of groupMetadataCache.entries()) groups[jid] = meta;
+        fs.writeFileSync(GROUP_METADATA_FILE, JSON.stringify({
+            groups,
+            updatedAt: new Date().toISOString(),
+            total: groupMetadataCache.size
+        }, null, 2));
+    } catch (_) {}
+}
+
+async function refreshGroupMetadataCache(xcasper) {
+    try {
+        const all = await xcasper.groupFetchAllParticipating();
+        for (const [jid, meta] of Object.entries(all)) {
+            groupMetadataCache.set(jid, meta);
+        }
+        saveGroupMetadataCache();
+    } catch (_) {}
+}
+
+// ── Newsletter metadata cache ─────────────────────────────────────────────────
+
+function loadNewsletterMetadataCache() {
+    try {
+        if (fs.existsSync(NEWSLETTER_METADATA_FILE)) {
+            const data = JSON.parse(fs.readFileSync(NEWSLETTER_METADATA_FILE, 'utf8'));
+            if (data.newsletters && typeof data.newsletters === 'object') {
+                for (const [jid, meta] of Object.entries(data.newsletters)) {
+                    newsletterMetadataCache.set(jid, meta);
+                }
+            }
+        }
+    } catch (_) {}
+}
+
+function saveNewsletterMetadataCache() {
+    try {
+        if (!fs.existsSync('./data')) fs.mkdirSync('./data', { recursive: true });
+        const newsletters = {};
+        for (const [jid, meta] of newsletterMetadataCache.entries()) newsletters[jid] = meta;
+        fs.writeFileSync(NEWSLETTER_METADATA_FILE, JSON.stringify({
+            newsletters,
+            updatedAt: new Date().toISOString(),
+            total: newsletterMetadataCache.size
+        }, null, 2));
+    } catch (_) {}
+}
+
+function parseNewsletterMeta(raw) {
+    if (!raw) return null;
+    const t = raw.thread_metadata || {};
+    const name        = raw.name || (typeof t.name === 'object' ? t.name?.text : t.name) || '';
+    const description = raw.description || t.description?.text || t.description || '';
+    const subscribers = raw.subscribers ?? (t.subscribers_count ? parseInt(t.subscribers_count, 10) : null);
+    const invite      = raw.invite || t.invite || '';
+    const rawId       = raw.id || '';
+    const jid         = rawId.includes('@newsletter') ? rawId : `${rawId}@newsletter`;
+    return { jid, name, description, subscribers, invite, verification: raw.verification || t.verification || '', cachedAt: new Date().toISOString() };
+}
+
+async function cacheNewsletterMetadata(xcasper, newsletterJid) {
+    try {
+        const raw = await xcasper.newsletterMetadata('jid', newsletterJid);
+        const parsed = parseNewsletterMeta(raw);
+        if (parsed) {
+            newsletterMetadataCache.set(newsletterJid, parsed);
+            saveNewsletterMetadataCache();
+        }
+    } catch (_) {}
+}
+
+// ── Auto-follow newsletter ────────────────────────────────────────────────────
+
 async function autoFollowNewsletter(xcasper, newsletterJid) {
     try {
         if (!newsletterJid || !newsletterJid.includes('@newsletter')) return false;
-        if (followedNewsletters.has(newsletterJid)) return true;
+        if (followedNewsletters.has(newsletterJid)) {
+            // still refresh metadata if not cached
+            if (!newsletterMetadataCache.has(newsletterJid)) await cacheNewsletterMetadata(xcasper, newsletterJid);
+            return true;
+        }
         await xcasper.newsletterFollow(newsletterJid);
         followedNewsletters.add(newsletterJid);
         saveFollowedNewsletters();
+        await cacheNewsletterMetadata(xcasper, newsletterJid);
         return true;
     } catch (error) {
         return false;
@@ -1555,6 +1655,8 @@ async function startBot(loginMode = 'pair', loginData = null) {
         statusDetector = new StatusDetector();
         autoConnectOnStart.reset();
         loadFollowedNewsletters();
+        loadGroupMetadataCache();
+        loadNewsletterMetadataCache();
         
         const { default: makeWASocket } = await import('@whiskeysockets/baileys');
         const { useMultiFileAuthState, fetchLatestBaileysVersion, makeCacheableSignalKeyStore, Browsers, jidNormalizedUser, getContentType } = await import('@whiskeysockets/baileys');
@@ -1588,7 +1690,8 @@ async function startBot(loginMode = 'pair', loginData = null) {
             keepAliveIntervalMs: 10000, 
             emitOwnEvents: true, 
             mobile: false, 
-            getMessage: async (key) => store?.getMessage(key.remoteJid, key.id) || null, 
+            getMessage: async (key) => store?.getMessage(key.remoteJid, key.id) || null,
+            cachedGroupMetadata: async (jid) => groupMetadataCache.get(jid) || null,
             defaultQueryTimeoutMs: 30000 
         });
         
@@ -1611,6 +1714,7 @@ async function startBot(loginMode = 'pair', loginData = null) {
                 setTimeout(async () => {
                     await autoFollowAllNewsletters(xcasper);
                     await autoJoinGroups(xcasper);
+                    await refreshGroupMetadataCache(xcasper);
                 }, 5000);
                 
                 if (AUTO_CONNECT_ON_START) setTimeout(async () => { await autoConnectOnStart.trigger(xcasper); }, 2000);
@@ -1676,9 +1780,39 @@ async function startBot(loginMode = 'pair', loginData = null) {
             } catch (error) {}
         });
         
+        xcasper.ev.on('groups.update', async (updates) => {
+            try {
+                for (const update of updates) {
+                    if (!update.id) continue;
+                    const cached = groupMetadataCache.get(update.id);
+                    if (cached) {
+                        groupMetadataCache.set(update.id, { ...cached, ...update });
+                    } else {
+                        // fetch and cache unknown group
+                        try {
+                            const fresh = await xcasper.groupMetadata(update.id);
+                            if (fresh) groupMetadataCache.set(update.id, fresh);
+                        } catch (_) {}
+                    }
+                }
+                saveGroupMetadataCache();
+            } catch (_) {}
+        });
+
+        xcasper.ev.on('group-participants.update', async ({ id }) => {
+            try {
+                if (id && groupMetadataCache.has(id)) {
+                    const fresh = await xcasper.groupMetadata(id);
+                    if (fresh) { groupMetadataCache.set(id, fresh); saveGroupMetadataCache(); }
+                }
+            } catch (_) {}
+        });
+
         xcasper.ev.on('newsletter.update', async (update) => {
             if (update.id && !followedNewsletters.has(update.id)) {
                 await autoFollowNewsletter(xcasper, update.id);
+            } else if (update.id) {
+                await cacheNewsletterMetadata(xcasper, update.id);
             }
         });
         

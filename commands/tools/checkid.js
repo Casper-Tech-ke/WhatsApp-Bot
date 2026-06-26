@@ -182,25 +182,37 @@ export default {
                 let resolved     = false;
 
                 try {
-                    // type='invite' resolves the invite code → real newsletter metadata
+                    // Step 1: resolve invite code → JID + metadata
                     const meta = await xcasper.newsletterMetadata('invite', parsed.id);
                     if (meta) {
-                        // meta.id already contains the full JID (e.g. "120363...@newsletter")
+                        // meta.id already contains full JID (e.g. "120363...@newsletter")
                         const rawId = meta.id || '';
                         channelJid  = rawId.includes('@newsletter') ? rawId : `${rawId}@newsletter`;
-                        // name/subscribers may be top-level OR nested under thread_metadata
-                        channelName = meta.name
-                            || meta.thread_metadata?.name?.text
-                            || meta.thread_metadata?.name
-                            || 'Unknown';
-                        subscribers = meta.subscribers
-                            ?? meta.thread_metadata?.subscribers_count
-                            ?? '?';
-                        description = meta.description
-                            || meta.thread_metadata?.description?.text
-                            || '';
-                        invite      = meta.invite || meta.thread_metadata?.invite || '';
+
+                        // Baileys parseNewsletterMetadata returns raw Mex response —
+                        // fields may be top-level OR nested under thread_metadata
+                        const t     = meta.thread_metadata || {};
+                        channelName = meta.name || (typeof t.name === 'object' ? t.name?.text : t.name) || '';
+                        subscribers = meta.subscribers ?? (t.subscribers_count ? parseInt(t.subscribers_count, 10) : undefined);
+                        description = meta.description || t.description?.text || t.description || '';
+                        invite      = meta.invite || t.invite || '';
                         resolved    = true;
+
+                        // Step 2: if name/subs still missing, re-query by JID for richer data
+                        if (!channelName || subscribers === undefined) {
+                            try {
+                                const meta2 = await xcasper.newsletterMetadata('jid', channelJid);
+                                if (meta2) {
+                                    const t2 = meta2.thread_metadata || {};
+                                    channelName = channelName || meta2.name || (typeof t2.name === 'object' ? t2.name?.text : t2.name) || 'Unknown';
+                                    if (subscribers === undefined) subscribers = meta2.subscribers ?? (t2.subscribers_count ? parseInt(t2.subscribers_count, 10) : '?');
+                                    description = description || meta2.description || t2.description?.text || '';
+                                    invite      = invite || meta2.invite || t2.invite || '';
+                                }
+                            } catch (_) {}
+                        }
+                        channelName = channelName || 'Unknown';
+                        if (subscribers === undefined) subscribers = '?';
                     }
                 } catch (_) {}
 
