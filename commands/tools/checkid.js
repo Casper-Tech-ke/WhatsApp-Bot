@@ -181,51 +181,68 @@ export default {
                 let invite       = '';
                 let resolved     = false;
 
+                // Helper: flatten a field that may be a string OR {text, ...} object
+                const flatStr = (v) => {
+                    if (!v) return '';
+                    if (typeof v === 'string') return v;
+                    if (typeof v === 'object') return v.text || Object.values(v).find(x => typeof x === 'string') || '';
+                    return String(v);
+                };
+
+                // Helper: parse subscriber count safely (never returns NaN)
+                const parseSubs = (raw) => {
+                    if (raw === undefined || raw === null) return undefined;
+                    const n = Number(raw);
+                    return Number.isFinite(n) ? n : undefined;
+                };
+
+                // Helper: apply a clean metadata object (from cache or API query)
+                const applyMeta = (m) => {
+                    const t = m.thread_metadata || {};
+                    // Prefer m.id, then m.jid, then keep the current channelJid
+                    const rawId = m.id || m.jid || '';
+                    if (rawId) channelJid = rawId.includes('@newsletter') ? rawId : `${rawId}@newsletter`;
+                    channelName = flatStr(m.name) || flatStr(t.name) || 'Unknown';
+                    const subVal = parseSubs(m.subscribers) ?? parseSubs(t.subscribers_count);
+                    subscribers = subVal !== undefined ? subVal : '?';
+                    description = flatStr(m.description) || flatStr(t.description) || '';
+                    invite      = m.invite || flatStr(t.invite) || '';
+                    resolved    = true;
+                };
+
+                // Step 1: check the local newsletter metadata cache (data/newsletter_metadata.json)
+                // Cache entries: { jid, name(str), subscribers(num), invite(str=invite code), description(obj|str) }
                 try {
-                    // Step 1: resolve invite code → JID + metadata
-                    const meta = await xcasper.newsletterMetadata('invite', parsed.id);
-                    if (meta) {
-                        // meta.id already contains full JID — never append @newsletter again
-                        const rawId = meta.id || '';
-                        channelJid  = rawId.includes('@newsletter') ? rawId : `${rawId}@newsletter`;
-
-                        // Raw Mex response matches NewsletterCreateResponse structure:
-                        //   top-level: id, state
-                        //   thread_metadata.name        → { text, id, update_time }  (object)
-                        //   thread_metadata.name        → string  (parsed variant)
-                        //   thread_metadata.subscribers_count → string
-                        // NewsletterMetadata (parsed) type:
-                        //   top-level: name (string), subscribers (number)
-                        const t = meta.thread_metadata || {};
-                        channelName = meta.name
-                            || (t.name && typeof t.name === 'object' ? t.name.text : t.name)
-                            || '';
-                        subscribers = meta.subscribers
-                            ?? (t.subscribers_count !== undefined ? parseInt(String(t.subscribers_count), 10) : undefined);
-                        description = meta.description
-                            || (t.description && typeof t.description === 'object' ? t.description.text : t.description)
-                            || '';
-                        invite  = meta.invite || t.invite || '';
-                        resolved = true;
-
-                        // Fallback: re-query by JID type if still missing data
-                        if (!channelName || subscribers === undefined) {
-                            try {
-                                const meta2 = await xcasper.newsletterMetadata('jid', channelJid);
-                                if (meta2) {
-                                    const t2 = meta2.thread_metadata || {};
-                                    if (!channelName) channelName = meta2.name || (t2.name && typeof t2.name === 'object' ? t2.name.text : t2.name) || '';
-                                    if (subscribers === undefined) subscribers = meta2.subscribers ?? (t2.subscribers_count !== undefined ? parseInt(String(t2.subscribers_count), 10) : undefined);
-                                    if (!description) description = meta2.description || (t2.description && typeof t2.description === 'object' ? t2.description.text : t2.description) || '';
-                                    if (!invite) invite = meta2.invite || t2.invite || '';
-                                }
-                            } catch (_) {}
+                    const { readFileSync } = await import('fs');
+                    const cache = JSON.parse(readFileSync('./data/newsletter_metadata.json', 'utf8'));
+                    for (const [jid, entry] of Object.entries(cache.newsletters || {})) {
+                        // entry.invite stores just the invite code (e.g. "0029Vb8CXOW5a23zVaRFfi05")
+                        if (entry.invite === parsed.id || entry.invite?.endsWith(parsed.id)) {
+                            applyMeta({ ...entry, id: jid });
+                            break;
                         }
-
-                        channelName = channelName || 'Unknown';
-                        if (subscribers === undefined) subscribers = '?';
                     }
                 } catch (_) {}
+
+                // Step 2: API fallback — resolve invite code → JID, then query by JID for clean data
+                if (!resolved) {
+                    try {
+                        const meta = await xcasper.newsletterMetadata('invite', parsed.id);
+                        if (meta) {
+                            const rawId = meta.id || '';
+                            channelJid  = rawId.includes('@newsletter') ? rawId : `${rawId}@newsletter`;
+
+                            // Prefer a 'jid' type query — returns top-level name/subscribers
+                            try {
+                                const meta2 = await xcasper.newsletterMetadata('jid', channelJid);
+                                if (meta2) { applyMeta(meta2); }
+                            } catch (_) {}
+
+                            // If 'jid' query failed, fall back to parsing the 'invite' response
+                            if (!resolved) { applyMeta(meta); }
+                        }
+                    } catch (_) {}
+                }
 
                 const lines = [
                     `🆔 *CHECK ID — CHANNEL LINK*\n`,
