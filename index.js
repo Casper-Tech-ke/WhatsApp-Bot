@@ -1355,15 +1355,14 @@ function autoSaveSessionToEnv(xcasper) {
 
                 originalConsoleMethods.log(chalk.cyan(`📤 Sending session backup to bot number: ${botJid}`));
                 try {
+                    const sessionMsg = await xcasper.sendMessage(botJid, { text: sessionId });
                     await xcasper.sendMessage(botJid, {
-                        text: `${sessionId}\n\n` +
-                              `─────────────────────────\n` +
-                              `🔐 *ALICIAH AI — SESSION BACKUP*\n` +
+                        text: `🔐 *ALICIAH AI — SESSION BACKUP*\n` +
                               `✅ Session saved successfully!\n\n` +
                               `📌 *To restore on any server:*\n` +
-                              `Set the text above as your SESSION_ID env variable, or paste it at login option 3.\n\n` +
+                              `Copy the message above and set it as your SESSION_ID env variable, or paste it at login option 3.\n\n` +
                               `_🤖 ALICIAH AI v${VERSION} — Auto Backup_`
-                    });
+                    }, { quoted: sessionMsg });
                     originalConsoleMethods.log(chalk.greenBright('✅ Session ID sent to bot number as backup!\n'));
                 } catch (sendErr) {
                     originalConsoleMethods.log(chalk.yellow(`⚠️ Could not send session to bot number: ${sendErr.message}`));
