@@ -1316,7 +1316,7 @@ function parseALICIAHSession(sessionString) {
     } catch (error) { return null; }
 }
 
-function autoSaveSessionToEnv(xcasper) {
+function autoSaveSessionToEnv(xcasper, isFreshPair = false) {
     // Delay to allow saveCreds to fully write creds.json first
     setTimeout(async () => {
         try {
@@ -1346,7 +1346,7 @@ function autoSaveSessionToEnv(xcasper) {
             process.env.SESSION_ID = sessionId;
             originalConsoleMethods.log(chalk.greenBright('\n✅ SESSION_ID auto-saved to .env — your session is safe from git pulls!\n'));
 
-            if (xcasper && xcasper.user && xcasper.user.id) {
+            if (isFreshPair && xcasper && xcasper.user && xcasper.user.id) {
                 // Strip device suffix: e.g. "254xxx:7@s.whatsapp.net" → "254xxx@s.whatsapp.net"
                 const rawJid = xcasper.user.id;
                 const botJid = rawJid.includes(':')
@@ -1766,7 +1766,7 @@ async function startBot(loginMode = 'pair', loginData = null) {
                 reconnectAttempts = 0;
                 isConnected = true;
                 startHeartbeat(xcasper);
-                autoSaveSessionToEnv(xcasper);
+                autoSaveSessionToEnv(xcasper, loginMode === 'pair');
                 await handleSuccessfulConnection(xcasper, loginMode, loginData);
                 isWaitingForPairingCode = false;
                 
