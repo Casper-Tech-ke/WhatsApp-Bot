@@ -1317,52 +1317,62 @@ function parseALICIAHSession(sessionString) {
 }
 
 function autoSaveSessionToEnv(xcasper) {
-    try {
-        const credsPath = path.join(SESSION_DIR, 'creds.json');
-        if (!fs.existsSync(credsPath)) return;
-        const credsJson = fs.readFileSync(credsPath, 'utf8');
-        const base64 = Buffer.from(credsJson).toString('base64');
-        const sessionId = `ALICIAH-AI:${base64}`;
+    // Delay to allow saveCreds to fully write creds.json first
+    setTimeout(async () => {
+        try {
+            const credsPath = path.join(SESSION_DIR, 'creds.json');
+            if (!fs.existsSync(credsPath)) {
+                originalConsoleMethods.log(chalk.yellow('⚠️ autoSaveSessionToEnv: creds.json not found yet, skipping.'));
+                return;
+            }
+            const credsJson = fs.readFileSync(credsPath, 'utf8');
+            const base64 = Buffer.from(credsJson).toString('base64');
+            const sessionId = `ALICIAH-AI:${base64}`;
 
-        let envContent = '';
-        if (fs.existsSync('./.env')) {
-            envContent = fs.readFileSync('./.env', 'utf8');
-        }
+            let envContent = '';
+            if (fs.existsSync('./.env')) {
+                envContent = fs.readFileSync('./.env', 'utf8');
+            }
 
-        const sessionIdLine = `SESSION_ID=${sessionId}`;
-        if (envContent.includes('SESSION_ID=')) {
-            envContent = envContent.replace(/^SESSION_ID=.*/m, sessionIdLine);
-        } else {
-            envContent = envContent.trimEnd();
-            envContent = envContent ? `${envContent}\n${sessionIdLine}\n` : `${sessionIdLine}\n`;
-        }
+            const sessionIdLine = `SESSION_ID=${sessionId}`;
+            if (envContent.includes('SESSION_ID=')) {
+                envContent = envContent.replace(/^SESSION_ID=.*/m, sessionIdLine);
+            } else {
+                envContent = envContent.trimEnd();
+                envContent = envContent ? `${envContent}\n${sessionIdLine}\n` : `${sessionIdLine}\n`;
+            }
 
-        fs.writeFileSync('./.env', envContent, 'utf8');
-        process.env.SESSION_ID = sessionId;
-        originalConsoleMethods.log(chalk.greenBright('\n✅ SESSION_ID auto-saved to .env — your session is safe from git pulls!\n'));
+            fs.writeFileSync('./.env', envContent, 'utf8');
+            process.env.SESSION_ID = sessionId;
+            originalConsoleMethods.log(chalk.greenBright('\n✅ SESSION_ID auto-saved to .env — your session is safe from git pulls!\n'));
 
-        if (xcasper && xcasper.user && xcasper.user.id) {
-            const botJid = xcasper.user.id;
-            setTimeout(async () => {
+            if (xcasper && xcasper.user && xcasper.user.id) {
+                // Strip device suffix: e.g. "254xxx:7@s.whatsapp.net" → "254xxx@s.whatsapp.net"
+                const rawJid = xcasper.user.id;
+                const botJid = rawJid.includes(':')
+                    ? rawJid.split(':')[0] + '@s.whatsapp.net'
+                    : rawJid;
+
+                originalConsoleMethods.log(chalk.cyan(`📤 Sending session backup to bot number: ${botJid}`));
                 try {
                     await xcasper.sendMessage(botJid, {
                         text: `🔐 *ALICIAH AI — SESSION BACKUP*\n\n` +
                               `✅ Your session has been saved successfully!\n\n` +
                               `📋 *Session ID (keep this safe):*\n\n` +
-                              `\`\`\`${sessionId}\`\`\`\n\n` +
+                              `${sessionId}\n\n` +
                               `📌 *How to restore:*\n` +
                               `Set this as your SESSION_ID environment variable, or paste it at login option 3.\n\n` +
                               `_🤖 ALICIAH AI v${VERSION} — Auto Backup_`
                     });
                     originalConsoleMethods.log(chalk.greenBright('✅ Session ID sent to bot number as backup!\n'));
-                } catch (err) {
-                    originalConsoleMethods.log(chalk.yellow(`⚠️ Could not send session to bot number: ${err.message}`));
+                } catch (sendErr) {
+                    originalConsoleMethods.log(chalk.yellow(`⚠️ Could not send session to bot number: ${sendErr.message}`));
                 }
-            }, 3000);
+            }
+        } catch (err) {
+            originalConsoleMethods.log(chalk.yellow(`⚠️ Could not auto-save session to .env: ${err.message}`));
         }
-    } catch (err) {
-        originalConsoleMethods.log(chalk.yellow(`⚠️ Could not auto-save session to .env: ${err.message}`));
-    }
+    }, 8000);
 }
 
 async function authenticateWithSessionId(sessionId) {
