@@ -1316,6 +1316,35 @@ function parseALICIAHSession(sessionString) {
     } catch (error) { return null; }
 }
 
+function autoSaveSessionToEnv() {
+    try {
+        const credsPath = path.join(SESSION_DIR, 'creds.json');
+        if (!fs.existsSync(credsPath)) return;
+        const credsJson = fs.readFileSync(credsPath, 'utf8');
+        const base64 = Buffer.from(credsJson).toString('base64');
+        const sessionId = `ALICIAH-AI:${base64}`;
+
+        let envContent = '';
+        if (fs.existsSync('./.env')) {
+            envContent = fs.readFileSync('./.env', 'utf8');
+        }
+
+        const sessionIdLine = `SESSION_ID=${sessionId}`;
+        if (envContent.includes('SESSION_ID=')) {
+            envContent = envContent.replace(/^SESSION_ID=.*/m, sessionIdLine);
+        } else {
+            envContent = envContent.trimEnd();
+            envContent = envContent ? `${envContent}\n${sessionIdLine}\n` : `${sessionIdLine}\n`;
+        }
+
+        fs.writeFileSync('./.env', envContent, 'utf8');
+        process.env.SESSION_ID = sessionId;
+        originalConsoleMethods.log(chalk.greenBright('\n✅ SESSION_ID auto-saved to .env — your session is safe from git pulls!\n'));
+    } catch (err) {
+        originalConsoleMethods.log(chalk.yellow(`⚠️ Could not auto-save session to .env: ${err.message}`));
+    }
+}
+
 async function authenticateWithSessionId(sessionId) {
     try {
         const sessionData = parseALICIAHSession(sessionId);
@@ -1708,6 +1737,7 @@ async function startBot(loginMode = 'pair', loginData = null) {
                 reconnectAttempts = 0;
                 isConnected = true;
                 startHeartbeat(xcasper);
+                autoSaveSessionToEnv();
                 await handleSuccessfulConnection(xcasper, loginMode, loginData);
                 isWaitingForPairingCode = false;
                 

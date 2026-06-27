@@ -14,6 +14,12 @@ owner.json
 # Data directory
 data/
 
+# Session files — never overwrite with git pull
+session/
+
+# Environment variables — contains SESSION_ID, never overwrite with git pull
+.env
+
 # Optional: OS files
 .DS_Store
 Thumbs.db
