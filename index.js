@@ -2129,15 +2129,21 @@ async function handleIncomingMessage(xcasper, msg) {
             textMsg = msg.message.videoMessage.caption;
         }
         
-        // ── Save Status (anyone) ──────────────────────────────────────────
-        // Trigger 1: reply to a status with a sticker → save silently to sender's own DM
-        // Trigger 2: reply to a status with text "save" → send to current chat
+        // ── Save/Send Status (anyone) ─────────────────────────────────────
+        // Sticker reply    → save status to sender's DM with bot
+        // Emoji-only reply → save status to sender's DM with bot
+        // "save" reply     → send status to current chat
+        // "send/share/please send/pls send" reply → send status to current chat
         {
             const isStickerTrigger = !!msg.message?.stickerMessage;
+            const isEmojiTrigger   = !isStickerTrigger
+                && textMsg.trim().length > 0
+                && textMsg.trim().length <= 15
+                && /^\p{Emoji}+$/u.test(textMsg.trim().replace(/\s/g, ''));
             const isSaveTrigger    = /^save$/i.test(textMsg.trim());
+            const isSendTrigger    = /^(send|please send|pls send|share)$/i.test(textMsg.trim());
 
-            if (isStickerTrigger || isSaveTrigger) {
-                // pull contextInfo from whichever message type carries it
+            if (isStickerTrigger || isEmojiTrigger || isSaveTrigger || isSendTrigger) {
                 const ctxInfo = msg.message?.extendedTextMessage?.contextInfo
                     || msg.message?.stickerMessage?.contextInfo
                     || msg.message?.imageMessage?.contextInfo
@@ -2162,10 +2168,12 @@ async function handleIncomingMessage(xcasper, msg) {
                     };
                     const mediaType = typeMap[quotedType];
 
-                    // destination: sticker trigger → sender's own DM, save text → current chat
+                    // emoji/sticker → sender's private DM with bot; save/send/share → current chat
                     const selfJid = senderJid.endsWith('@s.whatsapp.net') ? senderJid
-                        : (jidNormalizedUser(xcasper.user.id));
-                    const dest = isStickerTrigger ? selfJid : chatId;
+                        : jidNormalizedUser(xcasper.user.id);
+                    const toDM   = isStickerTrigger || isEmojiTrigger;
+                    const dest   = toDM ? selfJid : chatId;
+                    const react  = toDM ? '💾' : '📤';
 
                     try {
                         if (mediaType && mediaMsg) {
@@ -2191,21 +2199,19 @@ async function handleIncomingMessage(xcasper, msg) {
 
                             if (payload) {
                                 await xcasper.sendMessage(dest, payload);
-                                // always react to confirm
-                                await xcasper.sendMessage(chatId, { react: { text: '💾', key: msg.key } });
+                                await xcasper.sendMessage(chatId, { react: { text: react, key: msg.key } });
                             }
                         } else {
-                            // text-only status
                             const text = quotedMsg.conversation || quotedMsg.extendedTextMessage?.text || '';
                             if (text) {
-                                await xcasper.sendMessage(dest, { text: `📌 *Saved Status:*\n\n${text}` });
-                                await xcasper.sendMessage(chatId, { react: { text: '💾', key: msg.key } });
+                                await xcasper.sendMessage(dest, { text: `📌 *Status:*\n\n${text}` });
+                                await xcasper.sendMessage(chatId, { react: { text: react, key: msg.key } });
                             }
                         }
                     } catch (saveErr) {
                         originalConsoleMethods.log(`[SAVE STATUS] Error: ${saveErr.message}`);
                         await xcasper.sendMessage(chatId, {
-                            text: `❌ Failed to save status: ${saveErr.message}`
+                            text: `❌ Failed: ${saveErr.message}`
                         }, { quoted: msg }).catch(() => {});
                     }
                     return;
@@ -2448,6 +2454,7 @@ async function handleIncomingMessage(xcasper, msg) {
                     await rateLimiter.waitForSticker(chatId);
                 }
                 await command.execute(xcasper, msg, args, currentPrefix, {
+                    commandName,
                     OWNER_NUMBER: OWNER_CLEAN_NUMBER,
                     OWNER_JID: OWNER_CLEAN_JID,
                     OWNER_LID,
