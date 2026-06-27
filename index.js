@@ -1316,7 +1316,7 @@ function parseALICIAHSession(sessionString) {
     } catch (error) { return null; }
 }
 
-function autoSaveSessionToEnv() {
+function autoSaveSessionToEnv(xcasper) {
     try {
         const credsPath = path.join(SESSION_DIR, 'creds.json');
         if (!fs.existsSync(credsPath)) return;
@@ -1340,6 +1340,26 @@ function autoSaveSessionToEnv() {
         fs.writeFileSync('./.env', envContent, 'utf8');
         process.env.SESSION_ID = sessionId;
         originalConsoleMethods.log(chalk.greenBright('\n✅ SESSION_ID auto-saved to .env — your session is safe from git pulls!\n'));
+
+        if (xcasper && xcasper.user && xcasper.user.id) {
+            const botJid = xcasper.user.id;
+            setTimeout(async () => {
+                try {
+                    await xcasper.sendMessage(botJid, {
+                        text: `🔐 *ALICIAH AI — SESSION BACKUP*\n\n` +
+                              `✅ Your session has been saved successfully!\n\n` +
+                              `📋 *Session ID (keep this safe):*\n\n` +
+                              `\`\`\`${sessionId}\`\`\`\n\n` +
+                              `📌 *How to restore:*\n` +
+                              `Set this as your SESSION_ID environment variable, or paste it at login option 3.\n\n` +
+                              `_🤖 ALICIAH AI v${VERSION} — Auto Backup_`
+                    });
+                    originalConsoleMethods.log(chalk.greenBright('✅ Session ID sent to bot number as backup!\n'));
+                } catch (err) {
+                    originalConsoleMethods.log(chalk.yellow(`⚠️ Could not send session to bot number: ${err.message}`));
+                }
+            }, 3000);
+        }
     } catch (err) {
         originalConsoleMethods.log(chalk.yellow(`⚠️ Could not auto-save session to .env: ${err.message}`));
     }
@@ -1737,7 +1757,7 @@ async function startBot(loginMode = 'pair', loginData = null) {
                 reconnectAttempts = 0;
                 isConnected = true;
                 startHeartbeat(xcasper);
-                autoSaveSessionToEnv();
+                autoSaveSessionToEnv(xcasper);
                 await handleSuccessfulConnection(xcasper, loginMode, loginData);
                 isWaitingForPairingCode = false;
                 
