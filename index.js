@@ -402,7 +402,7 @@ let connectionOpenHandled = false;
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 // Toggle via eval:  > rawMsgLogging = true  (or false to stop)
-let rawMsgLogging = false;
+let rawMsgLogging = true;
 
 // ============ HELPER FUNCTIONS FOR MEDIA HANDLING ============
 
@@ -2106,6 +2106,8 @@ async function handleIncomingMessage(xcasper, msg) {
     try {
         const chatId = msg.key.remoteJid;
         const senderJid = msg.key.participant || chatId;
+
+        originalConsoleMethods.log(`[INCOMING] from=${chatId} sender=${senderJid} type=${Object.keys(msg.message||{}).join(',')}`);
         
         if (chatId === 'status@broadcast') return;
         
@@ -2490,7 +2492,9 @@ async function handleIncomingMessage(xcasper, msg) {
                 await xcasper.sendMessage(chatId, { text: `❌ Command failed: ${error.message}` }, { quoted: msg }).catch(() => {});
             }
         }
-    } catch (error) {}
+    } catch (error) {
+        originalConsoleMethods.log(`[MSG HANDLER ERROR] ${error.message}\n${error.stack}`);
+    }
 }
 
 async function handleDefaultCommands(commandName, xcasper, msg, args, currentPrefix) {
