@@ -93,6 +93,8 @@ const BOT_SETTINGS_FILE = './bot_settings.json';
 const BOT_MODE_FILE = './bot_mode.json';
 const WHITELIST_FILE = './whitelist.json';
 const BLOCKED_USERS_FILE = './blocked_users.json';
+const ANTI_SETTINGS_FILE = './data/anti_settings.json';
+const WARN_COUNTS_FILE   = './data/warn_counts.json';
 const SUDO_FILE = './data/sudo.json';
 const DEV_NUMBER = '254732982940';
 const WELCOME_DATA_FILE = './data/welcome_data.json';
@@ -339,6 +341,7 @@ function detectPlatform() {
 let OWNER_NUMBER = null, OWNER_JID = null, OWNER_CLEAN_JID = null, OWNER_CLEAN_NUMBER = null, OWNER_LID = null;
 let XCASPER_INSTANCE = null;
 let isConnected = false, store = null;
+const antiDeleteCache = new Map();
 let heartbeatInterval = null, lastActivityTime = Date.now();
 let BOT_MODE = 'public', WHITELIST = new Set(), AUTO_LINK_ENABLED = true;
 let SUDO_USERS = new Set();
@@ -1144,6 +1147,88 @@ let statusDetector = null;
 function isUserBlocked(jid) {
     try { if (fs.existsSync(BLOCKED_USERS_FILE)) { const data = JSON.parse(fs.readFileSync(BLOCKED_USERS_FILE, 'utf8')); return data.users && data.users.includes(jid); } } catch {}
     return false;
+}
+
+function loadAntiSettings() {
+    try { if (fs.existsSync(ANTI_SETTINGS_FILE)) return JSON.parse(fs.readFileSync(ANTI_SETTINGS_FILE, 'utf8')); } catch {}
+    return { antisticker: {}, antiall: {}, antidelete: { enabled: false, mode: 'samechat' } };
+}
+function saveAntiSettings(data) {
+    try { if (!fs.existsSync('./data')) fs.mkdirSync('./data', { recursive: true }); fs.writeFileSync(ANTI_SETTINGS_FILE, JSON.stringify(data, null, 2)); } catch {}
+}
+function loadWarnCounts() {
+    try { if (fs.existsSync(WARN_COUNTS_FILE)) return JSON.parse(fs.readFileSync(WARN_COUNTS_FILE, 'utf8')); } catch {}
+    return {};
+}
+function saveWarnCounts(data) {
+    try { if (!fs.existsSync('./data')) fs.mkdirSync('./data', { recursive: true }); fs.writeFileSync(WARN_COUNTS_FILE, JSON.stringify(data, null, 2)); } catch {}
+}
+
+async function handleAntiViolation(xcasper, msg, senderJid, chatId, type) {
+    const MAX_WARNS = 5;
+    const isGroup = chatId.endsWith('@g.us');
+    const warns = loadWarnCounts();
+    const warnKey = `${chatId}:${senderJid}:${type}`;
+    warns[warnKey] = (warns[warnKey] || 0) + 1;
+    const count = warns[warnKey];
+
+    // Delete message in group if possible
+    if (isGroup) {
+        try { await xcasper.sendMessage(chatId, { delete: msg.key }); } catch {}
+    }
+
+    if (count >= MAX_WARNS) {
+        const phoneJid = senderJid.includes('@s.whatsapp.net') ? senderJid : senderJid.split(':')[0] + '@s.whatsapp.net';
+        const label = type === 'sticker' ? 'Repeated sticker violations' : 'Sending restricted messages';
+        await xcasper.sendMessage(chatId, {
+            text: `🚫 *@${phoneJid.split('@')[0]} has been blocked!*\nReason: ${label} (${MAX_WARNS}/${MAX_WARNS} warnings)`,
+            mentions: [phoneJid]
+        });
+        try { await xcasper.updateBlockStatus(phoneJid, 'block'); } catch {}
+        delete warns[warnKey];
+    } else {
+        const typeLabel = type === 'sticker' ? '🚫 Stickers are not allowed here!' : '🚫 Sending messages is restricted here!';
+        await xcasper.sendMessage(chatId, {
+            text: `⚠️ *Warning ${count}/${MAX_WARNS}* — @${senderJid.split('@')[0]}\n${typeLabel}\n_${MAX_WARNS - count} more warning(s) before block._`,
+            mentions: [senderJid]
+        });
+    }
+    saveWarnCounts(warns);
+}
+
+async function forwardAntiDelete(xcasper, originalMsg, dest, originalChatId) {
+    try {
+        const { downloadContentFromMessage } = await import('@whiskeysockets/baileys');
+        const senderNum = (originalMsg.key.participant || originalMsg.key.remoteJid || '').split(':')[0].split('@')[0];
+        const notice = `🗑️ *Deleted Message Caught*\n👤 From: +${senderNum}\n📍 Chat: ${originalChatId.endsWith('@g.us') ? 'Group' : 'DM'}`;
+        const m = originalMsg.message;
+        const skipKeys = new Set(['messageContextInfo', 'senderKeyDistributionMessage', 'protocolMessage', 'deviceSentMessage']);
+        const contentType = Object.keys(m || {}).find(k => !skipKeys.has(k));
+        if (!contentType) return;
+
+        if (contentType === 'conversation' || contentType === 'extendedTextMessage') {
+            const text = m.conversation || m.extendedTextMessage?.text || '';
+            if (text) await xcasper.sendMessage(dest, { text: `${notice}\n\n💬 *Message:*\n${text}` });
+        } else if (['imageMessage','videoMessage','audioMessage','stickerMessage','documentMessage'].includes(contentType)) {
+            const mediaMsg = m[contentType];
+            const typeMap = { imageMessage:'image', videoMessage:'video', audioMessage:'audio', stickerMessage:'sticker', documentMessage:'document' };
+            const mType = typeMap[contentType];
+            const stream = await downloadContentFromMessage(mediaMsg, mType);
+            const chunks = [];
+            for await (const chunk of stream) chunks.push(chunk);
+            const buffer = Buffer.concat(chunks);
+            await xcasper.sendMessage(dest, { text: notice });
+            let payload;
+            if (contentType === 'imageMessage')    payload = { image: buffer, caption: mediaMsg.caption || '' };
+            else if (contentType === 'videoMessage')    payload = { video: buffer, caption: mediaMsg.caption || '', gifPlayback: mediaMsg.gifPlayback || false };
+            else if (contentType === 'audioMessage')    payload = { audio: buffer, mimetype: mediaMsg.mimetype || 'audio/mp4', ptt: mediaMsg.ptt || false };
+            else if (contentType === 'stickerMessage')  payload = { sticker: buffer };
+            else if (contentType === 'documentMessage') payload = { document: buffer, mimetype: mediaMsg.mimetype, fileName: mediaMsg.fileName || 'file' };
+            if (payload) await xcasper.sendMessage(dest, payload);
+        }
+    } catch (err) {
+        originalConsoleMethods.log(`[ANTI-DELETE] forward error: ${err.message}`);
+    }
 }
 
 function saveBotMode(mode) {
