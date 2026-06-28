@@ -2172,7 +2172,7 @@ async function handleIncomingMessage(xcasper, msg) {
 
                     // emoji/sticker → sender's private DM with bot; save/send/share → current chat
                     const selfJid = senderJid.endsWith('@s.whatsapp.net') ? senderJid
-                        : jidNormalizedUser(xcasper.user.id);
+                        : (xcasper.user.id.split(':')[0] + '@s.whatsapp.net');
                     const toDM   = isStickerTrigger || isEmojiTrigger;
                     const dest   = toDM ? selfJid : chatId;
                     const react  = toDM ? '💾' : '📤';
