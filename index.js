@@ -2268,7 +2268,6 @@ async function handleIncomingMessage(xcasper, msg) {
 
                             if (payload) {
                                 await xcasper.sendMessage(selfJid, payload);
-                                await xcasper.sendMessage(chatId, { react: { text: '💾', key: msg.key } });
                                 originalConsoleMethods.log(`[SAVE VIEW-ONCE] ✅ Sent ${innerType} to ${selfJid}`);
                             }
                         } else {
