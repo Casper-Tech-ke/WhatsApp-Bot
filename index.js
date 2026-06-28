@@ -2218,6 +2218,57 @@ async function handleIncomingMessage(xcasper, msg) {
                     }
                     return;
                 }
+
+                // ── Save View-Once Media ──────────────────────────────────
+                // If the quoted message is a view-once, unwrap and send to DM
+                const voWrapper = ctxInfo?.quotedMessage?.viewOnceMessage
+                    || ctxInfo?.quotedMessage?.viewOnceMessageV2
+                    || ctxInfo?.quotedMessage?.viewOnceMessageV2Extension;
+
+                if (voWrapper?.message) {
+                    const innerMsg  = voWrapper.message;
+                    const innerType = Object.keys(innerMsg).find(k => k !== 'messageContextInfo');
+                    const mediaMsg  = innerMsg[innerType];
+
+                    const voTypeMap = {
+                        imageMessage: 'image',
+                        videoMessage: 'video',
+                        audioMessage: 'audio',
+                    };
+                    const voMediaType = voTypeMap[innerType];
+                    const selfJid = senderJid.endsWith('@s.whatsapp.net') ? senderJid
+                        : (xcasper.user.id.split(':')[0] + '@s.whatsapp.net');
+
+                    try {
+                        if (voMediaType && mediaMsg) {
+                            const { downloadContentFromMessage } = await import('@whiskeysockets/baileys');
+                            const stream = await downloadContentFromMessage(mediaMsg, voMediaType);
+                            const chunks = [];
+                            for await (const chunk of stream) chunks.push(chunk);
+                            const buffer = Buffer.concat(chunks);
+
+                            const mime = mediaMsg.mimetype || '';
+                            let payload;
+                            if (innerType === 'imageMessage') {
+                                payload = { image: buffer, caption: mediaMsg.caption || '🔐 *View-Once saved by ALICIAH AI*' };
+                            } else if (innerType === 'videoMessage') {
+                                payload = { video: buffer, caption: mediaMsg.caption || '🔐 *View-Once saved by ALICIAH AI*', gifPlayback: mediaMsg.gifPlayback || false };
+                            } else if (innerType === 'audioMessage') {
+                                payload = { audio: buffer, mimetype: mime || 'audio/mp4', ptt: mediaMsg.ptt || false };
+                            }
+
+                            if (payload) {
+                                await xcasper.sendMessage(selfJid, payload);
+                                await xcasper.sendMessage(chatId, { react: { text: '💾', key: msg.key } });
+                                originalConsoleMethods.log(`[SAVE VIEW-ONCE] Sent ${innerType} to ${selfJid}`);
+                            }
+                        }
+                    } catch (voErr) {
+                        originalConsoleMethods.log(`[SAVE VIEW-ONCE] Error: ${voErr.message}`);
+                        await xcasper.sendMessage(chatId, { text: `❌ Failed to save view-once: ${voErr.message}` }, { quoted: msg }).catch(() => {});
+                    }
+                    return;
+                }
             }
         }
         // ─────────────────────────────────────────────────────────────────
