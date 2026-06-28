@@ -2219,16 +2219,23 @@ async function handleIncomingMessage(xcasper, msg) {
                     return;
                 }
 
-                // ── Save View-Once Media ──────────────────────────────────
-                // If the quoted message is a view-once, unwrap and send to DM
-                const voWrapper = ctxInfo?.quotedMessage?.viewOnceMessage
-                    || ctxInfo?.quotedMessage?.viewOnceMessageV2
-                    || ctxInfo?.quotedMessage?.viewOnceMessageV2Extension;
+                // ── Save View-Once / Quoted Media (DM or Group) ──────────
+                // WhatsApp often strips the viewOnce wrapper in quoted msgs,
+                // so we try the wrapper first, then fall back to raw quotedMessage.
+                if (ctxInfo?.quotedMessage && ctxInfo?.remoteJid !== 'status@broadcast') {
+                    const qMsg = ctxInfo.quotedMessage;
 
-                if (voWrapper?.message) {
-                    const innerMsg  = voWrapper.message;
-                    const innerType = Object.keys(innerMsg).find(k => k !== 'messageContextInfo');
-                    const mediaMsg  = innerMsg[innerType];
+                    // Try to unwrap viewOnce layers
+                    const voInner = qMsg.viewOnceMessage?.message
+                        || qMsg.viewOnceMessageV2?.message
+                        || qMsg.viewOnceMessageV2Extension?.message;
+
+                    // Use unwrapped content if found, otherwise use quotedMessage directly
+                    const targetMsg = voInner || qMsg;
+
+                    const skipKeys = ['messageContextInfo', 'senderKeyDistributionMessage', 'protocolMessage'];
+                    const innerType = Object.keys(targetMsg).find(k => !skipKeys.includes(k));
+                    const mediaMsg  = targetMsg[innerType];
 
                     const voTypeMap = {
                         imageMessage: 'image',
@@ -2239,8 +2246,10 @@ async function handleIncomingMessage(xcasper, msg) {
                     const selfJid = senderJid.endsWith('@s.whatsapp.net') ? senderJid
                         : (xcasper.user.id.split(':')[0] + '@s.whatsapp.net');
 
+                    originalConsoleMethods.log(`[SAVE VIEW-ONCE] innerType=${innerType} voMediaType=${voMediaType} hasMedia=${!!(mediaMsg?.url || mediaMsg?.directPath)}`);
+
                     try {
-                        if (voMediaType && mediaMsg) {
+                        if (voMediaType && mediaMsg && (mediaMsg.url || mediaMsg.directPath)) {
                             const { downloadContentFromMessage } = await import('@whiskeysockets/baileys');
                             const stream = await downloadContentFromMessage(mediaMsg, voMediaType);
                             const chunks = [];
@@ -2250,9 +2259,9 @@ async function handleIncomingMessage(xcasper, msg) {
                             const mime = mediaMsg.mimetype || '';
                             let payload;
                             if (innerType === 'imageMessage') {
-                                payload = { image: buffer, caption: mediaMsg.caption || '🔐 *View-Once saved by ALICIAH AI*' };
+                                payload = { image: buffer, caption: '🔐 *Saved by ALICIAH AI*' };
                             } else if (innerType === 'videoMessage') {
-                                payload = { video: buffer, caption: mediaMsg.caption || '🔐 *View-Once saved by ALICIAH AI*', gifPlayback: mediaMsg.gifPlayback || false };
+                                payload = { video: buffer, caption: '🔐 *Saved by ALICIAH AI*', gifPlayback: mediaMsg.gifPlayback || false };
                             } else if (innerType === 'audioMessage') {
                                 payload = { audio: buffer, mimetype: mime || 'audio/mp4', ptt: mediaMsg.ptt || false };
                             }
@@ -2260,12 +2269,14 @@ async function handleIncomingMessage(xcasper, msg) {
                             if (payload) {
                                 await xcasper.sendMessage(selfJid, payload);
                                 await xcasper.sendMessage(chatId, { react: { text: '💾', key: msg.key } });
-                                originalConsoleMethods.log(`[SAVE VIEW-ONCE] Sent ${innerType} to ${selfJid}`);
+                                originalConsoleMethods.log(`[SAVE VIEW-ONCE] ✅ Sent ${innerType} to ${selfJid}`);
                             }
+                        } else {
+                            originalConsoleMethods.log(`[SAVE VIEW-ONCE] ⚠️ No downloadable media found — innerType=${innerType}`);
                         }
                     } catch (voErr) {
                         originalConsoleMethods.log(`[SAVE VIEW-ONCE] Error: ${voErr.message}`);
-                        await xcasper.sendMessage(chatId, { text: `❌ Failed to save view-once: ${voErr.message}` }, { quoted: msg }).catch(() => {});
+                        await xcasper.sendMessage(chatId, { text: `❌ Failed to save: ${voErr.message}` }, { quoted: msg }).catch(() => {});
                     }
                     return;
                 }
