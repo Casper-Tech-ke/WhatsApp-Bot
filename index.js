@@ -1260,17 +1260,25 @@ async function handleAntiViolation(xcasper, msg, senderJid, chatId, type) {
 }
 
 // Resolve any JID (including @lid) to a phone @s.whatsapp.net JID for mentions.
-// Returns null if unresolvable — caller should skip the mention in that case.
-function resolvePhoneJid(jid) {
+// Tries: 1) already a phone JID, 2) lidPhoneCache, 3) Baileys getJidFromLid API.
+// Returns null if unresolvable — caller skips the mention in that case.
+async function resolvePhoneJid(sock, jid) {
     if (!jid) return null;
     const bare = jid.split(':')[0]; // strip device suffix e.g. :0
     if (bare.endsWith('@s.whatsapp.net')) return bare;
     if (bare.endsWith('@lid')) {
         const lidNum = bare.split('@')[0];
-        const phone  = globalThis.lidPhoneCache?.get(lidNum);
-        return phone ? `${phone}@s.whatsapp.net` : null;
+        // 1. Local cache
+        const cached = globalThis.lidPhoneCache?.get(lidNum);
+        if (cached) return `${cached}@s.whatsapp.net`;
+        // 2. Live Baileys API
+        try {
+            const result = await sock.getJidFromLid(bare);
+            if (result && result.includes('@s.whatsapp.net')) return result.split(':')[0];
+        } catch {}
+        return null; // genuinely unresolvable
     }
-    return null; // group JID or unknown — not mentionable
+    return null; // group JID or other — not mentionable
 }
 
 async function forwardAntiDelete(xcasper, originalMsg, dest, originalChatId, { deleterJid = null, groupName = null } = {}) {
@@ -1278,8 +1286,8 @@ async function forwardAntiDelete(xcasper, originalMsg, dest, originalChatId, { d
         const { downloadMediaMessage } = await import('@whiskeysockets/baileys');
 
         const rawSenderJid    = originalMsg.key.participant || originalMsg.key.remoteJid || '';
-        const senderPhoneJid  = resolvePhoneJid(rawSenderJid);
-        const senderNum       = senderPhoneJid ? senderPhoneJid.split('@')[0] : rawSenderJid.split(':')[0].split('@')[0];
+        const senderPhoneJid  = await resolvePhoneJid(xcasper, rawSenderJid);
+        const senderNum       = senderPhoneJid ? senderPhoneJid.split('@')[0] : null;
         const isGroup         = originalChatId.endsWith('@g.us');
         const chatLabel       = isGroup ? `👥 Group${groupName ? `: ${groupName}` : ''}` : '👤 DM';
         const timeStr         = new Date().toLocaleTimeString();
@@ -1288,20 +1296,29 @@ async function forwardAntiDelete(xcasper, originalMsg, dest, originalChatId, { d
         const mentions = [];
         if (senderPhoneJid) mentions.push(senderPhoneJid);
 
-        // Sender display: "Name @number" so WhatsApp activates the blue tap-link
-        const senderDisplay = originalMsg.pushName
-            ? `${originalMsg.pushName} @${senderNum}`
-            : `@${senderNum}`;
+        // Only use pushName if it's a real name (not blank, dot-only, or whitespace)
+        const cleanName = (originalMsg.pushName || '').trim().replace(/^[.\s]+$/, '');
+        // Sender display: show name + @mention if phone resolved, else just name or "Unknown"
+        let senderDisplay;
+        if (senderPhoneJid && cleanName) {
+            senderDisplay = `${cleanName} @${senderNum}`;
+        } else if (senderPhoneJid) {
+            senderDisplay = `@${senderNum}`;
+        } else if (cleanName) {
+            senderDisplay = cleanName;
+        } else {
+            senderDisplay = 'Unknown';
+        }
 
         let notice = `🗑️ *Deleted Message Caught*\n👤 Sender: ${senderDisplay}\n📍 Chat: ${chatLabel}\n🕒 Time: ${timeStr}`;
 
         if (deleterJid && deleterJid !== rawSenderJid) {
-            const delPhoneJid = resolvePhoneJid(deleterJid);
-            const delNum      = delPhoneJid
-                ? delPhoneJid.split('@')[0]
-                : deleterJid.split(':')[0].split('@')[0];
-            notice += `\n🗑️ Deleted by: @${delNum}`;
-            if (delPhoneJid && !mentions.includes(delPhoneJid)) mentions.push(delPhoneJid);
+            const delPhoneJid = await resolvePhoneJid(xcasper, deleterJid);
+            const delNum      = delPhoneJid ? delPhoneJid.split('@')[0] : null;
+            if (delPhoneJid && delNum) {
+                notice += `\n🗑️ Deleted by: @${delNum}`;
+                if (!mentions.includes(delPhoneJid)) mentions.push(delPhoneJid);
+            }
         }
 
         const m = originalMsg.message;
