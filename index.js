@@ -370,13 +370,26 @@ function addToAntiDeleteDb(msg) {
         if (!contentType) return;
         const db  = loadAntiDeleteDb();
         const key = `${chatId}:${msgId}`;
+        // Resolve real phone number NOW while LID→phone cache is warm.
+        // atasa pattern: store realNumber at capture time so retrieval never needs an API call.
+        const rawSender = msg.key.participant || chatId;
+        let realNumber  = null;
+        const bareSender = rawSender.split(':')[0];
+        if (bareSender.endsWith('@s.whatsapp.net')) {
+            realNumber = bareSender.split('@')[0];
+        } else if (bareSender.endsWith('@lid')) {
+            const lidNum = bareSender.split('@')[0];
+            const phone  = globalThis.lidPhoneCache?.get(lidNum);
+            if (phone) realNumber = phone;
+        }
         db[key] = {
-            key:       msg.key,
-            message:   msg.message,
-            sender:    msg.key.participant || chatId,
-            pushName:  msg.pushName || '',
+            key:        msg.key,
+            message:    msg.message,
+            sender:     rawSender,
+            pushName:   msg.pushName || '',
+            realNumber, // phone digits only e.g. '254712345678', or null if unresolvable
             chatId,
-            timestamp: Date.now()
+            timestamp:  Date.now()
         };
         // prune oldest if over cap
         const keys = Object.keys(db);
@@ -1286,8 +1299,14 @@ async function forwardAntiDelete(xcasper, originalMsg, dest, originalChatId, { d
         const { downloadMediaMessage } = await import('@whiskeysockets/baileys');
 
         const rawSenderJid    = originalMsg.key.participant || originalMsg.key.remoteJid || '';
-        const senderPhoneJid  = await resolvePhoneJid(xcasper, rawSenderJid);
-        const senderNum       = senderPhoneJid ? senderPhoneJid.split('@')[0] : null;
+        // Priority: realNumber stored at capture time → live resolve → null
+        let senderPhoneJid;
+        if (originalMsg.realNumber) {
+            senderPhoneJid = `${originalMsg.realNumber}@s.whatsapp.net`;
+        } else {
+            senderPhoneJid = await resolvePhoneJid(xcasper, rawSenderJid);
+        }
+        const senderNum = senderPhoneJid ? senderPhoneJid.split('@')[0] : null;
         const isGroup         = originalChatId.endsWith('@g.us');
         const chatLabel       = isGroup ? `👥 Group${groupName ? `: ${groupName}` : ''}` : '👤 DM';
         const timeStr         = new Date().toLocaleTimeString();
@@ -2257,7 +2276,7 @@ async function startBot(loginMode = 'pair', loginData = null) {
                     } catch {}
                 }
 
-                const pseudoMsg = { key: entry.key, message: entry.message, pushName: entry.pushName || '' };
+                const pseudoMsg = { key: entry.key, message: entry.message, pushName: entry.pushName || '', realNumber: entry.realNumber || null };
                 await forwardAntiDelete(xcasper, pseudoMsg, dest, chatId, { deleterJid, groupName });
             } catch (err) {
                 originalConsoleMethods.log(`[ANTI-DELETE] handler error: ${err.message}`);
