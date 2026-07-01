@@ -2216,12 +2216,12 @@ async function handleIncomingMessage(xcasper, msg) {
             textMsg = msg.message.videoMessage.caption;
         }
         
-        // ── Save/Send Status (anyone) ─────────────────────────────────────
-        // Sticker reply    → save status to sender's DM with bot
-        // Emoji-only reply → save status to sender's DM with bot
+        // ── Save/Send Status & View-Once (owner only) ────────────────────
+        // Sticker reply    → save status to owner's DM with bot
+        // Emoji-only reply → save status to owner's DM with bot
         // "save" reply     → send status to current chat
         // "send/share/please send/pls send" reply → send status to current chat
-        {
+        if (isOwnerUser) {
             const isStickerTrigger = !!msg.message?.stickerMessage;
             const isEmojiTrigger   = !isStickerTrigger
                 && textMsg.trim().length > 0
