@@ -1259,31 +1259,49 @@ async function handleAntiViolation(xcasper, msg, senderJid, chatId, type) {
     saveWarnCounts(warns);
 }
 
+// Resolve any JID (including @lid) to a phone @s.whatsapp.net JID for mentions.
+// Returns null if unresolvable — caller should skip the mention in that case.
+function resolvePhoneJid(jid) {
+    if (!jid) return null;
+    const bare = jid.split(':')[0]; // strip device suffix e.g. :0
+    if (bare.endsWith('@s.whatsapp.net')) return bare;
+    if (bare.endsWith('@lid')) {
+        const lidNum = bare.split('@')[0];
+        const phone  = globalThis.lidPhoneCache?.get(lidNum);
+        return phone ? `${phone}@s.whatsapp.net` : null;
+    }
+    return null; // group JID or unknown — not mentionable
+}
+
 async function forwardAntiDelete(xcasper, originalMsg, dest, originalChatId, { deleterJid = null, groupName = null } = {}) {
     try {
         const { downloadMediaMessage } = await import('@whiskeysockets/baileys');
 
-        const senderJid  = originalMsg.key.participant || originalMsg.key.remoteJid || '';
-        const senderNum  = senderJid.split(':')[0].split('@')[0];
-        // Normalise to @s.whatsapp.net for proper mention resolution
-        const senderMentionJid  = senderNum  ? `${senderNum}@s.whatsapp.net`  : null;
-        const senderName = originalMsg.pushName ? `${originalMsg.pushName} (@${senderNum})` : `@${senderNum}`;
-        const isGroup   = originalChatId.endsWith('@g.us');
-        const chatLabel = isGroup ? `👥 Group${groupName ? `: ${groupName}` : ''}` : '👤 DM';
-        const timeStr   = new Date().toLocaleTimeString();
+        const rawSenderJid    = originalMsg.key.participant || originalMsg.key.remoteJid || '';
+        const senderPhoneJid  = resolvePhoneJid(rawSenderJid);
+        const senderNum       = senderPhoneJid ? senderPhoneJid.split('@')[0] : rawSenderJid.split(':')[0].split('@')[0];
+        const isGroup         = originalChatId.endsWith('@g.us');
+        const chatLabel       = isGroup ? `👥 Group${groupName ? `: ${groupName}` : ''}` : '👤 DM';
+        const timeStr         = new Date().toLocaleTimeString();
 
-        // Build mention list and notice text
-        // WhatsApp activates a mention when text contains @number AND JID is in mentions[]
+        // Build mentions array — only valid @s.whatsapp.net JIDs go in here
         const mentions = [];
-        if (senderMentionJid) mentions.push(senderMentionJid);
+        if (senderPhoneJid) mentions.push(senderPhoneJid);
 
-        let notice = `🗑️ *Deleted Message Caught*\n👤 Sender: ${senderName}\n📍 Chat: ${chatLabel}\n🕒 Time: ${timeStr}`;
+        // Sender display: "Name @number" so WhatsApp activates the blue tap-link
+        const senderDisplay = originalMsg.pushName
+            ? `${originalMsg.pushName} @${senderNum}`
+            : `@${senderNum}`;
 
-        if (deleterJid && deleterJid !== senderJid) {
-            const delNum = deleterJid.split(':')[0].split('@')[0];
-            const delMentionJid = delNum ? `${delNum}@s.whatsapp.net` : null;
+        let notice = `🗑️ *Deleted Message Caught*\n👤 Sender: ${senderDisplay}\n📍 Chat: ${chatLabel}\n🕒 Time: ${timeStr}`;
+
+        if (deleterJid && deleterJid !== rawSenderJid) {
+            const delPhoneJid = resolvePhoneJid(deleterJid);
+            const delNum      = delPhoneJid
+                ? delPhoneJid.split('@')[0]
+                : deleterJid.split(':')[0].split('@')[0];
             notice += `\n🗑️ Deleted by: @${delNum}`;
-            if (delMentionJid && !mentions.includes(delMentionJid)) mentions.push(delMentionJid);
+            if (delPhoneJid && !mentions.includes(delPhoneJid)) mentions.push(delPhoneJid);
         }
 
         const m = originalMsg.message;
