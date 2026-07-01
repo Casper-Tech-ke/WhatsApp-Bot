@@ -1265,19 +1265,25 @@ async function forwardAntiDelete(xcasper, originalMsg, dest, originalChatId, { d
 
         const senderJid  = originalMsg.key.participant || originalMsg.key.remoteJid || '';
         const senderNum  = senderJid.split(':')[0].split('@')[0];
-        const senderName = originalMsg.pushName ? `${originalMsg.pushName} (+${senderNum})` : `+${senderNum}`;
-        const isGroup    = originalChatId.endsWith('@g.us');
-        const chatLabel  = isGroup ? `👥 Group${groupName ? `: ${groupName}` : ''}` : '👤 DM';
-        const timeStr    = new Date().toLocaleTimeString();
+        // Normalise to @s.whatsapp.net for proper mention resolution
+        const senderMentionJid  = senderNum  ? `${senderNum}@s.whatsapp.net`  : null;
+        const senderName = originalMsg.pushName ? `${originalMsg.pushName} (@${senderNum})` : `@${senderNum}`;
+        const isGroup   = originalChatId.endsWith('@g.us');
+        const chatLabel = isGroup ? `👥 Group${groupName ? `: ${groupName}` : ''}` : '👤 DM';
+        const timeStr   = new Date().toLocaleTimeString();
 
-        // Build notice with deleter info if different from sender
-        let notice = `🗑️ *Deleted Message Caught*\n👤 Sender: ${senderName}\n📍 Chat: ${chatLabel}\n🕒 Time: ${timeStr}`;
+        // Build mention list and notice text
+        // WhatsApp activates a mention when text contains @number AND JID is in mentions[]
         const mentions = [];
-        if (senderJid) mentions.push(senderJid);
+        if (senderMentionJid) mentions.push(senderMentionJid);
+
+        let notice = `🗑️ *Deleted Message Caught*\n👤 Sender: ${senderName}\n📍 Chat: ${chatLabel}\n🕒 Time: ${timeStr}`;
+
         if (deleterJid && deleterJid !== senderJid) {
             const delNum = deleterJid.split(':')[0].split('@')[0];
-            notice += `\n🗑️ Deleted by: +${delNum}`;
-            mentions.push(deleterJid);
+            const delMentionJid = delNum ? `${delNum}@s.whatsapp.net` : null;
+            notice += `\n🗑️ Deleted by: @${delNum}`;
+            if (delMentionJid && !mentions.includes(delMentionJid)) mentions.push(delMentionJid);
         }
 
         const m = originalMsg.message;
@@ -1285,16 +1291,13 @@ async function forwardAntiDelete(xcasper, originalMsg, dest, originalChatId, { d
         const contentType = Object.keys(m || {}).find(k => !skipKeys.has(k));
         if (!contentType) return;
 
-        const contextInfo = { mentionedJid: mentions, forwardingScore: 0, isForwarded: false };
-
         // ── Text messages ────────────────────────────────────────────────
         if (contentType === 'conversation' || contentType === 'extendedTextMessage') {
             const text = m.conversation || m.extendedTextMessage?.text || '';
             if (text) {
                 await xcasper.sendMessage(dest, {
                     text: `${notice}\n\n💬 *Message:*\n${text}`,
-                    mentions,
-                    contextInfo
+                    mentions
                 }, { quoted: originalMsg });
             }
             return;
@@ -1315,30 +1318,28 @@ async function forwardAntiDelete(xcasper, originalMsg, dest, originalChatId, { d
                 { reuploadRequest: xcasper.updateMediaMessage, logger: ultraSilentLogger }
             );
         } catch {
-            // fallback — CDN link may have expired, send notice only
             await xcasper.sendMessage(dest, {
                 text: `${notice}\n\n⚠️ Media could not be retrieved (expired or unavailable)`,
-                mentions,
-                contextInfo
+                mentions
             }, { quoted: originalMsg });
             return;
         }
 
-        // Send header notice first
-        await xcasper.sendMessage(dest, { text: notice, mentions, contextInfo }, { quoted: originalMsg });
+        // Send header notice (with mention + quoted)
+        await xcasper.sendMessage(dest, { text: notice, mentions }, { quoted: originalMsg });
 
         // Send the actual media
         let payload;
         if (contentType === 'imageMessage') {
-            payload = { image: buffer, caption: mediaMsg.caption || '', mentions, contextInfo };
+            payload = { image: buffer, caption: mediaMsg.caption || '', mentions };
         } else if (contentType === 'videoMessage') {
-            payload = { video: buffer, caption: mediaMsg.caption || '', gifPlayback: mediaMsg.gifPlayback || false, mentions, contextInfo };
+            payload = { video: buffer, caption: mediaMsg.caption || '', gifPlayback: mediaMsg.gifPlayback || false, mentions };
         } else if (contentType === 'audioMessage') {
             payload = { audio: buffer, mimetype: mediaMsg.mimetype || 'audio/mp4', ptt: mediaMsg.ptt || false };
         } else if (contentType === 'stickerMessage') {
             payload = { sticker: buffer };
         } else if (contentType === 'documentMessage') {
-            payload = { document: buffer, mimetype: mediaMsg.mimetype || 'application/octet-stream', fileName: mediaMsg.fileName || 'file', caption: mediaMsg.caption || '', mentions, contextInfo };
+            payload = { document: buffer, mimetype: mediaMsg.mimetype || 'application/octet-stream', fileName: mediaMsg.fileName || 'file', caption: mediaMsg.caption || '', mentions };
         }
         if (payload) await xcasper.sendMessage(dest, payload);
 
