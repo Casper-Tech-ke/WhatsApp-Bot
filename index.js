@@ -370,26 +370,27 @@ function addToAntiDeleteDb(msg) {
         if (!contentType) return;
         const db  = loadAntiDeleteDb();
         const key = `${chatId}:${msgId}`;
-        // Resolve real phone number NOW while LID→phone cache is warm.
-        // atasa pattern: store realNumber at capture time so retrieval never needs an API call.
+        // Store the best JID for mentions at capture time while caches are warm.
+        // WhatsApp supports both @s.whatsapp.net AND @lid in mentionedJid — use whichever we have.
         const rawSender = msg.key.participant || chatId;
-        let realNumber  = null;
-        const bareSender = rawSender.split(':')[0];
+        const bareSender = rawSender.split(':')[0]; // strip :0 device suffix
+        let senderMentionJid = null;
         if (bareSender.endsWith('@s.whatsapp.net')) {
-            realNumber = bareSender.split('@')[0];
+            senderMentionJid = bareSender;
         } else if (bareSender.endsWith('@lid')) {
             const lidNum = bareSender.split('@')[0];
             const phone  = globalThis.lidPhoneCache?.get(lidNum);
-            if (phone) realNumber = phone;
+            // Prefer phone JID if resolvable, otherwise keep LID — both work in WhatsApp mentions
+            senderMentionJid = phone ? `${phone}@s.whatsapp.net` : bareSender;
         }
         db[key] = {
-            key:        msg.key,
-            message:    msg.message,
-            sender:     rawSender,
-            pushName:   msg.pushName || '',
-            realNumber, // phone digits only e.g. '254712345678', or null if unresolvable
+            key:              msg.key,
+            message:          msg.message,
+            sender:           rawSender,
+            pushName:         msg.pushName || '',
+            senderMentionJid, // best JID for mention: @s.whatsapp.net if resolved, @lid otherwise
             chatId,
-            timestamp:  Date.now()
+            timestamp:        Date.now()
         };
         // prune oldest if over cap
         const keys = Object.keys(db);
@@ -1272,85 +1273,75 @@ async function handleAntiViolation(xcasper, msg, senderJid, chatId, type) {
     saveWarnCounts(warns);
 }
 
-// Resolve any JID (including @lid) to a phone @s.whatsapp.net JID for mentions.
-// Tries: 1) already a phone JID, 2) lidPhoneCache, 3) Baileys getJidFromLid API.
-// Returns null if unresolvable — caller skips the mention in that case.
-async function resolvePhoneJid(sock, jid) {
+// Resolve the best mention JID for a given JID.
+// WhatsApp supports BOTH @s.whatsapp.net and @lid in mentionedJid — use whichever we have.
+// Priority: phone JID (cache) → live API → LID as-is (still works!) → null for groups/unknown.
+async function resolveMentionJid(sock, jid) {
     if (!jid) return null;
-    const bare = jid.split(':')[0]; // strip device suffix e.g. :0
+    const bare = jid.split(':')[0]; // strip :0 device suffix
     if (bare.endsWith('@s.whatsapp.net')) return bare;
     if (bare.endsWith('@lid')) {
         const lidNum = bare.split('@')[0];
-        // 1. Local cache
-        const cached = globalThis.lidPhoneCache?.get(lidNum);
-        if (cached) return `${cached}@s.whatsapp.net`;
-        // 2. Live Baileys API
+        // 1. Local lidPhoneCache → phone JID preferred
+        const phone = globalThis.lidPhoneCache?.get(lidNum);
+        if (phone) return `${phone}@s.whatsapp.net`;
+        // 2. Baileys live API → phone JID
         try {
             const result = await sock.getJidFromLid(bare);
             if (result && result.includes('@s.whatsapp.net')) return result.split(':')[0];
         } catch {}
-        return null; // genuinely unresolvable
+        // 3. Fall back to LID as-is — WhatsApp resolves it to the contact name client-side
+        return bare;
     }
-    return null; // group JID or other — not mentionable
+    return null; // group JID or unknown
 }
 
 async function forwardAntiDelete(xcasper, originalMsg, dest, originalChatId, { deleterJid = null, groupName = null } = {}) {
     try {
         const { downloadMediaMessage } = await import('@whiskeysockets/baileys');
 
-        const rawSenderJid    = originalMsg.key.participant || originalMsg.key.remoteJid || '';
-        // Priority: realNumber stored at capture time → live resolve → null
-        let senderPhoneJid;
-        if (originalMsg.realNumber) {
-            senderPhoneJid = `${originalMsg.realNumber}@s.whatsapp.net`;
-        } else {
-            senderPhoneJid = await resolvePhoneJid(xcasper, rawSenderJid);
-        }
-        const senderNum = senderPhoneJid ? senderPhoneJid.split('@')[0] : null;
-        const isGroup         = originalChatId.endsWith('@g.us');
-        const chatLabel       = isGroup ? `👥 Group${groupName ? `: ${groupName}` : ''}` : '👤 DM';
-        const timeStr         = new Date().toLocaleTimeString();
+        const rawSenderJid = originalMsg.key.participant || originalMsg.key.remoteJid || '';
+        // Use stored senderMentionJid (captured while caches were warm) or resolve now
+        const senderMJid = originalMsg.senderMentionJid
+            || await resolveMentionJid(xcasper, rawSenderJid);
+        const senderNum  = senderMJid ? senderMJid.split('@')[0] : null;
 
-        // Only use pushName if it's a real name (not blank, dot-only, or whitespace)
+        const isGroup   = originalChatId.endsWith('@g.us');
+        const chatLabel = isGroup ? `👥 Group${groupName ? `: ${groupName}` : ''}` : '👤 DM';
+        const timeStr   = new Date().toLocaleTimeString();
+
+        // Only use pushName if it's a real name (not blank/dot/whitespace)
         const cleanName = (originalMsg.pushName || '').trim().replace(/^[.\s]+$/, '');
-        // Sender display: show name + @mention if phone resolved, else just name or "Unknown"
+
+        // Sender display: name + @num, @num alone, name alone, or Unknown
         let senderDisplay;
-        if (senderPhoneJid && cleanName) {
-            senderDisplay = `${cleanName} @${senderNum}`;
-        } else if (senderPhoneJid) {
-            senderDisplay = `@${senderNum}`;
-        } else if (cleanName) {
-            senderDisplay = cleanName;
-        } else {
-            senderDisplay = 'Unknown';
-        }
+        if (senderMJid && cleanName)  senderDisplay = `${cleanName} @${senderNum}`;
+        else if (senderMJid)          senderDisplay = `@${senderNum}`;
+        else if (cleanName)           senderDisplay = cleanName;
+        else                          senderDisplay = 'Unknown';
 
         let notice = `🗑️ *Deleted Message Caught*\n👤 Sender: ${senderDisplay}\n📍 Chat: ${chatLabel}\n🕒 Time: ${timeStr}`;
 
+        // Resolve deleter JID (may also be @lid)
+        let delMJid = null;
         if (deleterJid && deleterJid !== rawSenderJid) {
-            const delPhoneJid = await resolvePhoneJid(xcasper, deleterJid);
-            const delNum      = delPhoneJid ? delPhoneJid.split('@')[0] : null;
-            if (delPhoneJid && delNum) {
-                notice += `\n🗑️ Deleted by: @${delNum}`;
+            const bare = deleterJid.split(':')[0];
+            if (bare !== rawSenderJid.split(':')[0]) {
+                delMJid = await resolveMentionJid(xcasper, deleterJid);
+                if (delMJid) notice += `\n🗑️ Deleted by: @${delMJid.split('@')[0]}`;
             }
         }
 
-        // Build mentions array AFTER notice is final.
-        // Only include a JID if its @number actually appears in the notice text —
-        // otherwise WhatsApp sends a phantom bare-mention message.
+        // Build mentions AFTER notice is finalised.
+        // Only add a JID when its @number token appears in the text — no phantom mentions.
         const mentions = [];
-        const addMention = (phoneJid) => {
-            if (!phoneJid) return;
-            const num = phoneJid.split('@')[0];
-            if (notice.includes(`@${num}`) && !mentions.includes(phoneJid)) {
-                mentions.push(phoneJid);
-            }
+        const addMention = (mjid) => {
+            if (!mjid) return;
+            const num = mjid.split('@')[0];
+            if (notice.includes(`@${num}`) && !mentions.includes(mjid)) mentions.push(mjid);
         };
-        addMention(senderPhoneJid);
-        if (deleterJid && deleterJid !== rawSenderJid) {
-            const delPhoneJid = await resolvePhoneJid(xcasper, deleterJid);
-            addMention(delPhoneJid);
-        }
+        addMention(senderMJid);
+        addMention(delMJid);
 
         const m = originalMsg.message;
         const skipKeys = new Set(['messageContextInfo', 'senderKeyDistributionMessage', 'protocolMessage', 'deviceSentMessage']);
@@ -2297,7 +2288,7 @@ async function startBot(loginMode = 'pair', loginData = null) {
                     } catch {}
                 }
 
-                const pseudoMsg = { key: entry.key, message: entry.message, pushName: entry.pushName || '', realNumber: entry.realNumber || null };
+                const pseudoMsg = { key: entry.key, message: entry.message, pushName: entry.pushName || '', senderMentionJid: entry.senderMentionJid || null };
                 await forwardAntiDelete(xcasper, pseudoMsg, dest, chatId, { deleterJid, groupName });
             } catch (err) {
                 originalConsoleMethods.log(`[ANTI-DELETE] handler error: ${err.message}`);
