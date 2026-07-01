@@ -1259,39 +1259,89 @@ async function handleAntiViolation(xcasper, msg, senderJid, chatId, type) {
     saveWarnCounts(warns);
 }
 
-async function forwardAntiDelete(xcasper, originalMsg, dest, originalChatId) {
+async function forwardAntiDelete(xcasper, originalMsg, dest, originalChatId, { deleterJid = null, groupName = null } = {}) {
     try {
-        const { downloadContentFromMessage } = await import('@whiskeysockets/baileys');
-        const senderNum  = (originalMsg.key.participant || originalMsg.key.remoteJid || '').split(':')[0].split('@')[0];
+        const { downloadMediaMessage } = await import('@whiskeysockets/baileys');
+
+        const senderJid  = originalMsg.key.participant || originalMsg.key.remoteJid || '';
+        const senderNum  = senderJid.split(':')[0].split('@')[0];
         const senderName = originalMsg.pushName ? `${originalMsg.pushName} (+${senderNum})` : `+${senderNum}`;
-        const chatLabel  = originalChatId.endsWith('@g.us') ? '👥 Group' : '👤 DM';
+        const isGroup    = originalChatId.endsWith('@g.us');
+        const chatLabel  = isGroup ? `👥 Group${groupName ? `: ${groupName}` : ''}` : '👤 DM';
         const timeStr    = new Date().toLocaleTimeString();
-        const notice = `🗑️ *Deleted Message Caught*\n👤 From: ${senderName}\n📍 Chat: ${chatLabel}\n🕒 Time: ${timeStr}`;
+
+        // Build notice with deleter info if different from sender
+        let notice = `🗑️ *Deleted Message Caught*\n👤 Sender: ${senderName}\n📍 Chat: ${chatLabel}\n🕒 Time: ${timeStr}`;
+        const mentions = [];
+        if (senderJid) mentions.push(senderJid);
+        if (deleterJid && deleterJid !== senderJid) {
+            const delNum = deleterJid.split(':')[0].split('@')[0];
+            notice += `\n🗑️ Deleted by: +${delNum}`;
+            mentions.push(deleterJid);
+        }
+
         const m = originalMsg.message;
         const skipKeys = new Set(['messageContextInfo', 'senderKeyDistributionMessage', 'protocolMessage', 'deviceSentMessage']);
         const contentType = Object.keys(m || {}).find(k => !skipKeys.has(k));
         if (!contentType) return;
 
+        const contextInfo = { mentionedJid: mentions, forwardingScore: 0, isForwarded: false };
+
+        // ── Text messages ────────────────────────────────────────────────
         if (contentType === 'conversation' || contentType === 'extendedTextMessage') {
             const text = m.conversation || m.extendedTextMessage?.text || '';
-            if (text) await xcasper.sendMessage(dest, { text: `${notice}\n\n💬 *Message:*\n${text}` });
-        } else if (['imageMessage','videoMessage','audioMessage','stickerMessage','documentMessage'].includes(contentType)) {
-            const mediaMsg = m[contentType];
-            const typeMap = { imageMessage:'image', videoMessage:'video', audioMessage:'audio', stickerMessage:'sticker', documentMessage:'document' };
-            const mType = typeMap[contentType];
-            const stream = await downloadContentFromMessage(mediaMsg, mType);
-            const chunks = [];
-            for await (const chunk of stream) chunks.push(chunk);
-            const buffer = Buffer.concat(chunks);
-            await xcasper.sendMessage(dest, { text: notice });
-            let payload;
-            if (contentType === 'imageMessage')    payload = { image: buffer, caption: mediaMsg.caption || '' };
-            else if (contentType === 'videoMessage')    payload = { video: buffer, caption: mediaMsg.caption || '', gifPlayback: mediaMsg.gifPlayback || false };
-            else if (contentType === 'audioMessage')    payload = { audio: buffer, mimetype: mediaMsg.mimetype || 'audio/mp4', ptt: mediaMsg.ptt || false };
-            else if (contentType === 'stickerMessage')  payload = { sticker: buffer };
-            else if (contentType === 'documentMessage') payload = { document: buffer, mimetype: mediaMsg.mimetype, fileName: mediaMsg.fileName || 'file' };
-            if (payload) await xcasper.sendMessage(dest, payload);
+            if (text) {
+                await xcasper.sendMessage(dest, {
+                    text: `${notice}\n\n💬 *Message:*\n${text}`,
+                    mentions,
+                    contextInfo
+                }, { quoted: originalMsg });
+            }
+            return;
         }
+
+        // ── Media messages — use downloadMediaMessage with reuploadRequest ─
+        const mediaTypes = { imageMessage:'image', videoMessage:'video', audioMessage:'audio', stickerMessage:'sticker', documentMessage:'document' };
+        const mType = mediaTypes[contentType];
+        if (!mType) return;
+
+        const mediaMsg = m[contentType];
+        let buffer;
+        try {
+            buffer = await downloadMediaMessage(
+                originalMsg,
+                'buffer',
+                {},
+                { reuploadRequest: xcasper.updateMediaMessage, logger: ultraSilentLogger }
+            );
+        } catch {
+            // fallback — CDN link may have expired, send notice only
+            await xcasper.sendMessage(dest, {
+                text: `${notice}\n\n⚠️ Media could not be retrieved (expired or unavailable)`,
+                mentions,
+                contextInfo
+            }, { quoted: originalMsg });
+            return;
+        }
+
+        // Send header notice first
+        await xcasper.sendMessage(dest, { text: notice, mentions, contextInfo }, { quoted: originalMsg });
+
+        // Send the actual media
+        let payload;
+        if (contentType === 'imageMessage') {
+            payload = { image: buffer, caption: mediaMsg.caption || '', mentions, contextInfo };
+        } else if (contentType === 'videoMessage') {
+            payload = { video: buffer, caption: mediaMsg.caption || '', gifPlayback: mediaMsg.gifPlayback || false, mentions, contextInfo };
+        } else if (contentType === 'audioMessage') {
+            payload = { audio: buffer, mimetype: mediaMsg.mimetype || 'audio/mp4', ptt: mediaMsg.ptt || false };
+        } else if (contentType === 'stickerMessage') {
+            payload = { sticker: buffer };
+        } else if (contentType === 'documentMessage') {
+            payload = { document: buffer, mimetype: mediaMsg.mimetype || 'application/octet-stream', fileName: mediaMsg.fileName || 'file', caption: mediaMsg.caption || '', mentions, contextInfo };
+        }
+        if (payload) await xcasper.sendMessage(dest, payload);
+
     } catch (err) {
         originalConsoleMethods.log(`[ANTI-DELETE] forward error: ${err.message}`);
     }
@@ -2126,53 +2176,68 @@ async function startBot(loginMode = 'pair', loginData = null) {
             
             if (store) store.addMessage(msg.key.remoteJid, msg.key.id, msg);
             addToAntiDeleteDb(msg);
+
+            // Dual detection: some Baileys versions deliver revokes via upsert
+            if (msg.message?.protocolMessage?.type === 0) {
+                const deletedId  = msg.message.protocolMessage?.key?.id;
+                const chatId     = msg.key.remoteJid;
+                const deleterJid = msg.key.participant || msg.key.remoteJid;
+                if (deletedId) handleAntiDeleteRevoke(chatId, deletedId, deleterJid).catch(() => {});
+                return;
+            }
+
             handleIncomingMessage(xcasper, msg).catch(() => {});
         });
 
-        // ── Anti-Delete: detect revoked messages ──────────────────────────
-        xcasper.ev.on('messages.update', async (updates) => {
+        // ── Anti-Delete: shared handler ───────────────────────────────────
+        async function handleAntiDeleteRevoke(chatId, deletedMsgId, deleterJid) {
             try {
                 const antiSettings = loadAntiSettings();
                 if (!antiSettings.antidelete?.enabled) return;
-                const mode = antiSettings.antidelete.mode || 'samechat';
 
-                for (const update of updates) {
-                    const { key, update: upd } = update;
-                    if (!upd?.message) continue;
+                if (!chatId || chatId === 'status@broadcast') return;
 
-                    // Check for protocol revoke (delete) message
-                    const isRevoke = upd.message?.protocolMessage?.type === 0
-                        || upd.message?.protocolMessage?.type === 'REVOKE';
-                    if (!isRevoke) continue;
+                // Skip if the bot itself deleted the message
+                const botNum = xcasper.user?.id?.split(':')[0]?.split('@')[0];
+                if (botNum && deleterJid && deleterJid.includes(botNum)) return;
 
-                    const chatId = key.remoteJid;
-                    if (!chatId || chatId === 'status@broadcast') continue;
+                const db    = loadAntiDeleteDb();
+                const entry = db[`${chatId}:${deletedMsgId}`];
+                if (!entry) return;
 
-                    // Get the ID of the message that was deleted
-                    const deletedId = upd.message.protocolMessage?.key?.id || key.id;
-                    const dbKey = `${chatId}:${deletedId}`;
-                    const db = loadAntiDeleteDb();
-                    const entry = db[dbKey];
-                    if (!entry) continue;
+                // Skip if older than 3 hours
+                if (Date.now() - (entry.timestamp || 0) > ANTIDELETE_MAX_AGE) return;
 
-                    // Check age — skip if older than 3 hours
-                    if (Date.now() - (entry.timestamp || 0) > ANTIDELETE_MAX_AGE) continue;
+                const mode     = antiSettings.antidelete.mode || 'samechat';
+                const ownerJid = OWNER_CLEAN_JID || OWNER_JID;
+                const dest     = mode === 'dm' && ownerJid ? ownerJid : chatId;
 
-                    // Determine destination
-                    const ownerJid = OWNER_CLEAN_JID || OWNER_JID;
-                    const dest = mode === 'dm' && ownerJid ? ownerJid : chatId;
-
-                    // Reconstruct a pseudo-msg for forwardAntiDelete
-                    const pseudoMsg = {
-                        key:      entry.key,
-                        message:  entry.message,
-                        pushName: entry.pushName || ''
-                    };
-
-                    await forwardAntiDelete(xcasper, pseudoMsg, dest, chatId).catch(() => {});
+                // Fetch group name if applicable
+                let groupName = null;
+                if (chatId.endsWith('@g.us')) {
+                    try {
+                        const meta = groupMetadataCache.get(chatId) || await xcasper.groupMetadata(chatId);
+                        groupName  = meta?.subject || null;
+                    } catch {}
                 }
+
+                const pseudoMsg = { key: entry.key, message: entry.message, pushName: entry.pushName || '' };
+                await forwardAntiDelete(xcasper, pseudoMsg, dest, chatId, { deleterJid, groupName });
             } catch (err) {
-                originalConsoleMethods.log(`[ANTI-DELETE] update handler error: ${err.message}`);
+                originalConsoleMethods.log(`[ANTI-DELETE] handler error: ${err.message}`);
+            }
+        }
+
+        // Via messages.update (most Baileys versions)
+        xcasper.ev.on('messages.update', async (updates) => {
+            for (const { key, update: upd } of updates) {
+                const isRevoke = upd?.message?.protocolMessage?.type === 0
+                    || upd?.message?.protocolMessage?.type === 'REVOKE';
+                if (!isRevoke) continue;
+                const chatId     = key.remoteJid;
+                const deletedId  = upd.message.protocolMessage?.key?.id || key.id;
+                const deleterJid = key.participant || key.remoteJid;
+                await handleAntiDeleteRevoke(chatId, deletedId, deleterJid);
             }
         });
         
