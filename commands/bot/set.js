@@ -1,7 +1,19 @@
+import fs from 'fs';
+
+const ANTI_SETTINGS_FILE = './data/anti_settings.json';
+
+function loadAntiSettings() {
+    try { if (fs.existsSync(ANTI_SETTINGS_FILE)) return JSON.parse(fs.readFileSync(ANTI_SETTINGS_FILE, 'utf8')); } catch {}
+    return { antisticker: {}, antiall: {}, antidelete: { enabled: false, mode: 'samechat' } };
+}
+function saveAntiSettings(data) {
+    try { if (!fs.existsSync('./data')) fs.mkdirSync('./data', { recursive: true }); fs.writeFileSync(ANTI_SETTINGS_FILE, JSON.stringify(data, null, 2)); return true; } catch { return false; }
+}
+
 export default {
     name: 'set',
     alias: ['config', 'botset', 'settings'],
-    description: 'View and update bot configuration (mode, prefix, name, status)',
+    description: 'View and update bot configuration (mode, prefix, name, status, antidelete)',
     category: 'bot',
     ownerOnly: true,
 
@@ -36,10 +48,13 @@ export default {
 
         // ── SHOW ALL SETTINGS ─────────────────────────────────────────────
         if (!sub || sub === 'show' || sub === 'status') {
-            const st = getAutoStatusSettings();
+            const st  = getAutoStatusSettings();
+            const ad  = loadAntiSettings().antidelete || { enabled: false, mode: 'samechat' };
             const viewIcon  = st.autoviewStatus !== 'false' ? '✅' : '❌';
-            const likeIcon  = st.autoLikeStatus === 'true' ? '✅' : '❌';
+            const likeIcon  = st.autoLikeStatus === 'true'  ? '✅' : '❌';
             const replyIcon = st.autoReplyStatus === 'true' ? '✅' : '❌';
+            const adIcon    = ad.enabled ? '✅' : '❌';
+            const adMode    = ad.mode === 'dm' ? '📩 DM' : '💬 Same Chat';
             return xcasper.sendMessage(chatId, {
                 text: `╭━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╮
 ┃  ⚙️ *BOT CONFIGURATION*
@@ -54,6 +69,8 @@ export default {
 ┃  💬 *Auto Reply Status:* ${replyIcon}
 ┃  😊 *Like Emoji:*  ${st.statusLikeEmojis}
 ┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┫
+┃  🗑️ *Anti-Delete:* ${adIcon} ${ad.enabled ? adMode : 'OFF'}
+┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┫
 ┃  📋 *Available Commands:*
 ┃  ├ ${prefix}set public / private / group
 ┃  ├ ${prefix}set maintenance / silent
@@ -61,7 +78,8 @@ export default {
 ┃  ├ ${prefix}set name <new name>
 ┃  ├ ${prefix}set autoview on/off
 ┃  ├ ${prefix}set autolike on/off
-┃  └ ${prefix}set likeemoji <emoji>
+┃  ├ ${prefix}set likeemoji <emoji>
+┃  └ ${prefix}set antidelete on/off/dm/samechat
 ╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯`
             }, { quoted: msg });
         }
@@ -186,6 +204,60 @@ export default {
             }
             return xcasper.sendMessage(chatId, {
                 text: `✅ *Like Emoji Updated!*\n\n😊 New emoji: *${newEmoji}*\n\n_Bot will use this when auto-liking statuses._`
+            }, { quoted: msg });
+        }
+
+        // ── ANTI-DELETE ───────────────────────────────────────────────────
+        if (sub === 'antidelete' || sub === 'antidel') {
+            const val  = args[1]?.toLowerCase();
+            const settings = loadAntiSettings();
+            if (!settings.antidelete) settings.antidelete = { enabled: false, mode: 'samechat' };
+
+            if (!val) {
+                const ad     = settings.antidelete;
+                const adIcon = ad.enabled ? '✅' : '❌';
+                const adMode = ad.mode === 'dm' ? '📩 DM' : '💬 Same Chat';
+                return xcasper.sendMessage(chatId, {
+                    text: `🗑️ *Anti-Delete*\n\nStatus : ${adIcon} ${ad.enabled ? 'ON' : 'OFF'}\nMode   : ${adMode}\n\n*Usage:*\n• \`${prefix}set antidelete on\` — enable (same chat)\n• \`${prefix}set antidelete on dm\` — enable (DM mode)\n• \`${prefix}set antidelete off\` — disable\n• \`${prefix}set antidelete dm\` — switch to DM mode\n• \`${prefix}set antidelete samechat\` — switch to same chat mode`
+                }, { quoted: msg });
+            }
+
+            if (val === 'on') {
+                const mode = args[2]?.toLowerCase() === 'dm' ? 'dm' : 'samechat';
+                settings.antidelete = { enabled: true, mode };
+                saveAntiSettings(settings);
+                const modeLabel = mode === 'dm' ? '📩 Deleted messages → your DM' : '💬 Deleted messages → same chat';
+                return xcasper.sendMessage(chatId, {
+                    text: `✅ *Anti-Delete ENABLED*\n\n${modeLabel}\n💾 Messages stored in JSON DB, auto-cleared after 3 hours.`
+                }, { quoted: msg });
+            }
+
+            if (val === 'off') {
+                settings.antidelete.enabled = false;
+                saveAntiSettings(settings);
+                return xcasper.sendMessage(chatId, {
+                    text: `❎ *Anti-Delete DISABLED*`
+                }, { quoted: msg });
+            }
+
+            if (val === 'dm') {
+                settings.antidelete.mode = 'dm';
+                saveAntiSettings(settings);
+                return xcasper.sendMessage(chatId, {
+                    text: `✅ *Anti-Delete mode → 📩 DM*\nDeleted messages will be sent to your private chat with the bot.`
+                }, { quoted: msg });
+            }
+
+            if (val === 'samechat' || val === 'sc') {
+                settings.antidelete.mode = 'samechat';
+                saveAntiSettings(settings);
+                return xcasper.sendMessage(chatId, {
+                    text: `✅ *Anti-Delete mode → 💬 Same Chat*\nDeleted messages will be resent in the original chat.`
+                }, { quoted: msg });
+            }
+
+            return xcasper.sendMessage(chatId, {
+                text: `❓ *Usage:* \`${prefix}set antidelete on/off/dm/samechat\``
             }, { quoted: msg });
         }
 
