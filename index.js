@@ -1311,10 +1311,6 @@ async function forwardAntiDelete(xcasper, originalMsg, dest, originalChatId, { d
         const chatLabel       = isGroup ? `👥 Group${groupName ? `: ${groupName}` : ''}` : '👤 DM';
         const timeStr         = new Date().toLocaleTimeString();
 
-        // Build mentions array — only valid @s.whatsapp.net JIDs go in here
-        const mentions = [];
-        if (senderPhoneJid) mentions.push(senderPhoneJid);
-
         // Only use pushName if it's a real name (not blank, dot-only, or whitespace)
         const cleanName = (originalMsg.pushName || '').trim().replace(/^[.\s]+$/, '');
         // Sender display: show name + @mention if phone resolved, else just name or "Unknown"
@@ -1336,8 +1332,24 @@ async function forwardAntiDelete(xcasper, originalMsg, dest, originalChatId, { d
             const delNum      = delPhoneJid ? delPhoneJid.split('@')[0] : null;
             if (delPhoneJid && delNum) {
                 notice += `\n🗑️ Deleted by: @${delNum}`;
-                if (!mentions.includes(delPhoneJid)) mentions.push(delPhoneJid);
             }
+        }
+
+        // Build mentions array AFTER notice is final.
+        // Only include a JID if its @number actually appears in the notice text —
+        // otherwise WhatsApp sends a phantom bare-mention message.
+        const mentions = [];
+        const addMention = (phoneJid) => {
+            if (!phoneJid) return;
+            const num = phoneJid.split('@')[0];
+            if (notice.includes(`@${num}`) && !mentions.includes(phoneJid)) {
+                mentions.push(phoneJid);
+            }
+        };
+        addMention(senderPhoneJid);
+        if (deleterJid && deleterJid !== rawSenderJid) {
+            const delPhoneJid = await resolvePhoneJid(xcasper, deleterJid);
+            addMention(delPhoneJid);
         }
 
         const m = originalMsg.message;
@@ -2245,12 +2257,21 @@ async function startBot(loginMode = 'pair', loginData = null) {
         });
 
         // ── Anti-Delete: shared handler ───────────────────────────────────
+        // Dedup set: prevents dual-trigger (messages.upsert + messages.update both fire for same delete)
+        const _antiDeleteProcessed = new Set();
+
         async function handleAntiDeleteRevoke(chatId, deletedMsgId, deleterJid) {
             try {
                 const antiSettings = loadAntiSettings();
                 if (!antiSettings.antidelete?.enabled) return;
 
                 if (!chatId || chatId === 'status@broadcast') return;
+
+                // Deduplicate — same deletion can arrive from both messages.upsert and messages.update
+                const dedupeKey = `${chatId}:${deletedMsgId}`;
+                if (_antiDeleteProcessed.has(dedupeKey)) return;
+                _antiDeleteProcessed.add(dedupeKey);
+                setTimeout(() => _antiDeleteProcessed.delete(dedupeKey), 30_000);
 
                 // Skip if the bot itself deleted the message
                 const botNum = xcasper.user?.id?.split(':')[0]?.split('@')[0];
