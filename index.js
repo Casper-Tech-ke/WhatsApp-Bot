@@ -341,7 +341,70 @@ function detectPlatform() {
 let OWNER_NUMBER = null, OWNER_JID = null, OWNER_CLEAN_JID = null, OWNER_CLEAN_NUMBER = null, OWNER_LID = null;
 let XCASPER_INSTANCE = null;
 let isConnected = false, store = null;
-const antiDeleteCache = new Map();
+// ── Anti-Delete JSON DB ──────────────────────────────────────────────
+const ANTIDELETE_DB_FILE   = './data/antidelete_db.json';
+const ANTIDELETE_MAX_AGE   = 3 * 60 * 60 * 1000;   // 3 hours in ms
+const ANTIDELETE_MAX_TOTAL = 2000;                   // cap total stored msgs
+
+function loadAntiDeleteDb() {
+    try {
+        if (fs.existsSync(ANTIDELETE_DB_FILE))
+            return JSON.parse(fs.readFileSync(ANTIDELETE_DB_FILE, 'utf8'));
+    } catch {}
+    return {};
+}
+function saveAntiDeleteDb(db) {
+    try {
+        if (!fs.existsSync('./data')) fs.mkdirSync('./data', { recursive: true });
+        fs.writeFileSync(ANTIDELETE_DB_FILE, JSON.stringify(db, null, 2));
+    } catch {}
+}
+function addToAntiDeleteDb(msg) {
+    try {
+        const chatId = msg.key?.remoteJid;
+        const msgId  = msg.key?.id;
+        if (!chatId || !msgId || chatId === 'status@broadcast') return;
+        if (chatId.includes('@newsletter')) return;
+        const skipKeys = new Set(['messageContextInfo','senderKeyDistributionMessage','protocolMessage','deviceSentMessage']);
+        const contentType = Object.keys(msg.message || {}).find(k => !skipKeys.has(k));
+        if (!contentType) return;
+        const db  = loadAntiDeleteDb();
+        const key = `${chatId}:${msgId}`;
+        db[key] = {
+            key:       msg.key,
+            message:   msg.message,
+            sender:    msg.key.participant || chatId,
+            pushName:  msg.pushName || '',
+            chatId,
+            timestamp: Date.now()
+        };
+        // prune oldest if over cap
+        const keys = Object.keys(db);
+        if (keys.length > ANTIDELETE_MAX_TOTAL) {
+            keys.sort((a, b) => (db[a].timestamp || 0) - (db[b].timestamp || 0));
+            keys.slice(0, keys.length - ANTIDELETE_MAX_TOTAL).forEach(k => delete db[k]);
+        }
+        saveAntiDeleteDb(db);
+    } catch {}
+}
+function cleanOldAntiDeleteEntries() {
+    try {
+        const db  = loadAntiDeleteDb();
+        const now = Date.now();
+        let changed = false;
+        for (const k of Object.keys(db)) {
+            if (now - (db[k].timestamp || 0) > ANTIDELETE_MAX_AGE) {
+                delete db[k]; changed = true;
+            }
+        }
+        if (changed) saveAntiDeleteDb(db);
+        const remaining = Object.keys(db).length;
+        if (remaining > 0)
+            originalConsoleMethods.log(`[ANTI-DELETE] 🧹 DB cleaned — ${remaining} messages cached`);
+    } catch {}
+}
+// Run cleanup every hour
+setInterval(cleanOldAntiDeleteEntries, 60 * 60 * 1000);
 let heartbeatInterval = null, lastActivityTime = Date.now();
 let BOT_MODE = 'public', WHITELIST = new Set(), AUTO_LINK_ENABLED = true;
 let SUDO_USERS = new Set();
@@ -1199,8 +1262,11 @@ async function handleAntiViolation(xcasper, msg, senderJid, chatId, type) {
 async function forwardAntiDelete(xcasper, originalMsg, dest, originalChatId) {
     try {
         const { downloadContentFromMessage } = await import('@whiskeysockets/baileys');
-        const senderNum = (originalMsg.key.participant || originalMsg.key.remoteJid || '').split(':')[0].split('@')[0];
-        const notice = `🗑️ *Deleted Message Caught*\n👤 From: +${senderNum}\n📍 Chat: ${originalChatId.endsWith('@g.us') ? 'Group' : 'DM'}`;
+        const senderNum  = (originalMsg.key.participant || originalMsg.key.remoteJid || '').split(':')[0].split('@')[0];
+        const senderName = originalMsg.pushName ? `${originalMsg.pushName} (+${senderNum})` : `+${senderNum}`;
+        const chatLabel  = originalChatId.endsWith('@g.us') ? '👥 Group' : '👤 DM';
+        const timeStr    = new Date().toLocaleTimeString();
+        const notice = `🗑️ *Deleted Message Caught*\n👤 From: ${senderName}\n📍 Chat: ${chatLabel}\n🕒 Time: ${timeStr}`;
         const m = originalMsg.message;
         const skipKeys = new Set(['messageContextInfo', 'senderKeyDistributionMessage', 'protocolMessage', 'deviceSentMessage']);
         const contentType = Object.keys(m || {}).find(k => !skipKeys.has(k));
@@ -2059,7 +2125,55 @@ async function startBot(loginMode = 'pair', loginData = null) {
             }
             
             if (store) store.addMessage(msg.key.remoteJid, msg.key.id, msg);
+            addToAntiDeleteDb(msg);
             handleIncomingMessage(xcasper, msg).catch(() => {});
+        });
+
+        // ── Anti-Delete: detect revoked messages ──────────────────────────
+        xcasper.ev.on('messages.update', async (updates) => {
+            try {
+                const antiSettings = loadAntiSettings();
+                if (!antiSettings.antidelete?.enabled) return;
+                const mode = antiSettings.antidelete.mode || 'samechat';
+
+                for (const update of updates) {
+                    const { key, update: upd } = update;
+                    if (!upd?.message) continue;
+
+                    // Check for protocol revoke (delete) message
+                    const isRevoke = upd.message?.protocolMessage?.type === 0
+                        || upd.message?.protocolMessage?.type === 'REVOKE';
+                    if (!isRevoke) continue;
+
+                    const chatId = key.remoteJid;
+                    if (!chatId || chatId === 'status@broadcast') continue;
+
+                    // Get the ID of the message that was deleted
+                    const deletedId = upd.message.protocolMessage?.key?.id || key.id;
+                    const dbKey = `${chatId}:${deletedId}`;
+                    const db = loadAntiDeleteDb();
+                    const entry = db[dbKey];
+                    if (!entry) continue;
+
+                    // Check age — skip if older than 3 hours
+                    if (Date.now() - (entry.timestamp || 0) > ANTIDELETE_MAX_AGE) continue;
+
+                    // Determine destination
+                    const ownerJid = OWNER_CLEAN_JID || OWNER_JID;
+                    const dest = mode === 'dm' && ownerJid ? ownerJid : chatId;
+
+                    // Reconstruct a pseudo-msg for forwardAntiDelete
+                    const pseudoMsg = {
+                        key:      entry.key,
+                        message:  entry.message,
+                        pushName: entry.pushName || ''
+                    };
+
+                    await forwardAntiDelete(xcasper, pseudoMsg, dest, chatId).catch(() => {});
+                }
+            } catch (err) {
+                originalConsoleMethods.log(`[ANTI-DELETE] update handler error: ${err.message}`);
+            }
         });
         
         return xcasper;
