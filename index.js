@@ -405,7 +405,7 @@ let connectionOpenHandled = false;
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 // Toggle via eval:  > rawMsgLogging = true  (or false to stop)
-let rawMsgLogging = true;
+let rawMsgLogging = false;
 
 // ============ HELPER FUNCTIONS FOR MEDIA HANDLING ============
 
