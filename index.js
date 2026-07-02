@@ -74,6 +74,7 @@ import dotenv from 'dotenv';
 import chalk from 'chalk';
 import readline from 'readline';
 import axios from 'axios';
+import { getGroupSetting } from './lib/groupSettings.js';
 
 dotenv.config({ path: './.env' });
 
@@ -2091,11 +2092,137 @@ async function startBot(loginMode = 'pair', loginData = null) {
 
         xcasper.ev.on('creds.update', saveCreds);
         xcasper.ev.on('group-participants.update', async (update) => {
-            try { 
-                if (memberDetector && memberDetector.enabled) { 
-                    await memberDetector.detectNewMembers(xcasper, update); 
-                } 
-            } catch (error) {}
+            const { id: groupId, action, participants, actor } = update;
+            if (!groupId || !participants?.length) return;
+
+            // ── memberDetector (existing) ─────────────────────────────────
+            try {
+                if (memberDetector && memberDetector.enabled) {
+                    await memberDetector.detectNewMembers(xcasper, update);
+                }
+            } catch (_) {}
+
+            // ── Welcome / Goodbye messages ────────────────────────────────
+            try {
+                if (action === 'add' || action === 'invite') {
+                    const welcomeEnabled = getGroupSetting(groupId, 'WELCOME_ENABLED');
+                    if (welcomeEnabled === 'true') {
+                        let meta = null;
+                        try { meta = await xcasper.groupMetadata(groupId); } catch (_) {}
+                        const groupName = meta?.subject || 'this group';
+                        const memberCount = meta?.participants?.length || '?';
+
+                        for (const jid of participants) {
+                            try {
+                                const num = jid.split('@')[0];
+                                const userJid = jid.endsWith('@lid') ? jid : `${num}@s.whatsapp.net`;
+                                const raw = getGroupSetting(groupId, 'WELCOME_MESSAGE');
+                                const text = (raw || '👋 Welcome @{user} to *{group}*!\n\nWe now have *{count}* members 🎉')
+                                    .replace(/{user}/g, num)
+                                    .replace(/{group}/g, groupName)
+                                    .replace(/{count}/g, memberCount);
+                                await xcasper.sendMessage(groupId, {
+                                    text,
+                                    mentions: [userJid]
+                                });
+                            } catch (_) {}
+                        }
+                    }
+                } else if (action === 'remove') {
+                    const goodbyeEnabled = getGroupSetting(groupId, 'GOODBYE_ENABLED');
+                    if (goodbyeEnabled === 'true') {
+                        let meta = null;
+                        try { meta = await xcasper.groupMetadata(groupId); } catch (_) {}
+                        const groupName = meta?.subject || 'this group';
+                        const memberCount = meta?.participants?.length || '?';
+
+                        for (const jid of participants) {
+                            try {
+                                const num = jid.split('@')[0];
+                                const raw = getGroupSetting(groupId, 'GOODBYE_MESSAGE');
+                                const text = (raw || '👋 *{user}* has left *{group}*.\n\nWe now have *{count}* members remaining.')
+                                    .replace(/{user}/g, num)
+                                    .replace(/{group}/g, groupName)
+                                    .replace(/{count}/g, memberCount);
+                                await xcasper.sendMessage(groupId, { text });
+                            } catch (_) {}
+                        }
+                    }
+                }
+            } catch (_) {}
+
+            // ── Anti-Promote enforcement ──────────────────────────────────
+            // When someone promotes a member: demote that member + demote the promoter
+            if (action === 'promote') {
+                try {
+                    const antiPromote = getGroupSetting(groupId, 'ANTIPROMOTE');
+                    if (antiPromote !== 'true') return;
+
+                    const botJid = (xcasper.user?.id?.split(':')[0] || '') + '@s.whatsapp.net';
+                    // Ignore if the bot itself performed the promotion (via .promote command)
+                    if (actor && actor.split(':')[0] + '@s.whatsapp.net' === botJid) return;
+
+                    const ownerNum = OWNER_CLEAN_NUMBER || OWNER_NUMBER;
+                    const actorNum = actor ? actor.split('@')[0].split(':')[0] : '';
+                    if (actorNum && actorNum === ownerNum) return;
+
+                    const toDemote = [...participants];
+                    if (actor && !actor.includes('@g.us')) {
+                        const actorJid = actor.split(':')[0] + (actor.includes('@') ? (actor.endsWith('@lid') ? '@lid' : '@s.whatsapp.net') : '@s.whatsapp.net');
+                        if (actorJid !== botJid) toDemote.push(actorJid);
+                    }
+
+                    for (const jid of [...new Set(toDemote)]) {
+                        try {
+                            const num = jid.split('@')[0].split(':')[0];
+                            if (num === ownerNum) continue;
+                            await xcasper.groupParticipantsUpdate(groupId, [jid], 'demote');
+                            await xcasper.sendMessage(groupId, {
+                                text: `🛡️ *Anti-Promote*: @${num} was demoted. Unauthorized promotions are not allowed in this group.`,
+                                mentions: [jid]
+                            });
+                        } catch (_) {}
+                    }
+                } catch (_) {}
+            }
+
+            // ── Anti-Demote enforcement ───────────────────────────────────
+            // When someone demotes an admin: re-promote that admin + demote the demoter
+            if (action === 'demote') {
+                try {
+                    const antiDemote = getGroupSetting(groupId, 'ANTIDEMOTE');
+                    if (antiDemote !== 'true') return;
+
+                    const botJid = (xcasper.user?.id?.split(':')[0] || '') + '@s.whatsapp.net';
+                    if (actor && actor.split(':')[0] + '@s.whatsapp.net' === botJid) return;
+
+                    const ownerNum = OWNER_CLEAN_NUMBER || OWNER_NUMBER;
+                    const actorNum = actor ? actor.split('@')[0].split(':')[0] : '';
+                    if (actorNum && actorNum === ownerNum) return;
+
+                    // Re-promote the demoted participants
+                    for (const jid of participants) {
+                        try {
+                            await xcasper.groupParticipantsUpdate(groupId, [jid], 'promote');
+                        } catch (_) {}
+                    }
+
+                    // Demote the actor (the one who performed the demote)
+                    if (actor && !actor.includes('@g.us')) {
+                        try {
+                            const actorJid = actor.split(':')[0] + (actor.includes('@') ? (actor.endsWith('@lid') ? '@lid' : '@s.whatsapp.net') : '@s.whatsapp.net');
+                            if (actorJid !== botJid && actorNum !== ownerNum) {
+                                await xcasper.groupParticipantsUpdate(groupId, [actorJid], 'demote');
+                                const demotedNums = participants.map(j => j.split('@')[0]).join(', @');
+                                await xcasper.sendMessage(groupId, {
+                                    text: `🛡️ *Anti-Demote*: @${actorNum} was demoted for trying to remove admin rights from @${demotedNums}. Their admin has been restored.`,
+                                    mentions: [actorJid, ...participants]
+                                });
+                            }
+                        } catch (_) {}
+                    }
+                } catch (_) {}
+            }
         });
         
         xcasper.ev.on('groups.update', async (updates) => {
