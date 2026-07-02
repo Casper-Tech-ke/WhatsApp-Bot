@@ -2,9 +2,9 @@ import { buildGroupCtx, fetchGroupCtx } from '../../lib/groupHelpers.js';
 import { getGroupSetting, setGroupSetting } from '../../lib/groupSettings.js';
 
 export default {
-    name: 'antidemote',
+    name: 'antipromote',
     alias: [],
-    description: 'Toggle anti-demote protection. Demotes demoter and re-promotes demoted user.',
+    description: 'Toggle anti-promote protection. Demotes both promoter and promoted user.',
     category: 'group',
     async execute(xcasper, msg, args, prefix, ctx) {
         const base = buildGroupCtx(xcasper, msg, args, prefix);
@@ -16,20 +16,20 @@ export default {
         if (!isAdmin && !isSuperAdmin && !isSuperUser) return reply('❌ You must be an admin to use this command!');
 
         const action = args[0]?.toLowerCase();
-        const rawCurrent = getGroupSetting(from, 'ANTIDEMOTE');
+        const rawCurrent = getGroupSetting(from, 'ANTIPROMOTE');
         const current = rawCurrent === 'true' ? 'true' : 'false';
 
         if (!action || !['on', 'off'].includes(action)) {
-            return reply(`🛡️ *Anti-Demote Protection*\n\nCurrent: ${current === 'true' ? 'ON ✅' : 'OFF ❌'}\n\n*Usage:*\n${botPrefix}antidemote on - Enable\n${botPrefix}antidemote off - Disable\n\n_When enabled, if someone demotes an admin, the demoter gets demoted and the demoted user is re-promoted._`);
+            return reply(`🛡️ *Anti-Promote Protection*\n\nCurrent: ${current === 'true' ? 'ON ✅' : 'OFF ❌'}\n\n*Usage:*\n${botPrefix}antipromote on - Enable\n${botPrefix}antipromote off - Disable\n\n_When enabled, if someone promotes another user, both will be demoted._`);
         }
 
         const value = action === 'on' ? 'true' : 'false';
         if (current === value) {
-            return reply(`⚠️ Anti-Demote is already ${action === 'on' ? 'ON' : 'OFF'}!`);
+            return reply(`⚠️ Anti-Promote is already ${action === 'on' ? 'ON' : 'OFF'}!`);
         }
 
-        setGroupSetting(from, 'ANTIDEMOTE', value);
+        setGroupSetting(from, 'ANTIPROMOTE', value);
         await react('✅');
-        return reply(`✅ Anti-Demote is now ${action === 'on' ? 'ON' : 'OFF'} for this group.`);
+        return reply(`✅ Anti-Promote is now ${action === 'on' ? 'ON' : 'OFF'} for this group.`);
     }
 };
