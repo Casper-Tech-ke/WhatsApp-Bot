@@ -2573,6 +2573,53 @@ async function logIncomingMessage(xcasper, msg, textMsg) {
     } catch {}
 }
 
+function getBaileysQuotedMessage(msg, chatId) {
+    const content = msg.message?.ephemeralMessage?.message || msg.message || {};
+    const messageWithQuote = Object.values(content).find((value) =>
+        value && typeof value === 'object' && value.contextInfo?.quotedMessage
+    );
+    const contextInfo = messageWithQuote?.contextInfo;
+    if (!contextInfo?.quotedMessage) return null;
+
+    const quotedMessage = contextInfo.quotedMessage;
+    const ignoredTypes = new Set(['messageContextInfo', 'senderKeyDistributionMessage', 'protocolMessage']);
+    const type = Object.keys(quotedMessage).find((key) => !ignoredTypes.has(key)) || null;
+    const body = type ? quotedMessage[type] : null;
+    const isGroup = chatId.endsWith('@g.us');
+    const sender = isGroup
+        ? contextInfo.participant || null
+        : msg.key.remoteJidAlt || contextInfo.participant || chatId;
+
+    const text = quotedMessage.conversation
+        || quotedMessage.extendedTextMessage?.text
+        || quotedMessage.imageMessage?.caption
+        || quotedMessage.videoMessage?.caption
+        || quotedMessage.documentMessage?.caption
+        || quotedMessage.buttonsResponseMessage?.selectedDisplayText
+        || quotedMessage.listResponseMessage?.title
+        || '';
+
+    // This has the key/message shape Baileys expects for quoting and media
+    // helpers, with convenience fields for inspecting a replied-to message.
+    return {
+        key: {
+            remoteJid: contextInfo.remoteJid || chatId,
+            id: contextInfo.stanzaId,
+            participant: sender || undefined,
+            fromMe: false
+        },
+        message: quotedMessage,
+        sender,
+        participant: sender,
+        id: contextInfo.stanzaId,
+        type,
+        mtype: type,
+        text,
+        body,
+        contextInfo
+    };
+}
+
 async function handleIncomingMessage(xcasper, msg) {
     if (!isConnected) return;
     
@@ -2836,10 +2883,13 @@ async function handleIncomingMessage(xcasper, msg) {
                     // push name (display name of sender)
                     const pushName = msg.pushName || '';
 
-                    // quoted message helpers
-                    const quotedMsg  = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage || null;
-                    const quotedUser = msg.message?.extendedTextMessage?.contextInfo?.participant   || null;
-                    const quotedKey  = msg.message?.extendedTextMessage?.contextInfo?.stanzaId      || null;
+                    // Baileys reply context. `quoted` and `m.quoted` are both
+                    // available to owner eval commands when this is a reply.
+                    const quoted     = getBaileysQuotedMessage(msg, chatId);
+                    const quotedMsg  = quoted?.message || null;
+                    const quotedUser = quoted?.sender || null;
+                    const quotedKey  = quoted?.id || null;
+                    m.quoted = quoted;
 
                     // group metadata (lazy — only fetched if accessed)
                     let _groupMeta = null;
