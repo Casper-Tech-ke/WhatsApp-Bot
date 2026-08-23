@@ -1,4 +1,4 @@
-import { buildGroupCtx, fetchGroupCtx, resolveTargetJid } from '../../lib/groupHelpers.js';
+import { buildGroupCtx, fetchGroupCtx, participantMatchesJid, resolveTargetJid } from '../../lib/groupHelpers.js';
 
 export default {
     name: 'demote',
@@ -35,10 +35,7 @@ export default {
         let isSuperAdminTarget = superAdminNums.includes(targetNum);
 
         if (groupMetadata?.participants) {
-            const participant = groupMetadata.participants.find(p => {
-                const pNum = (p.id || p.pn || '').split('@')[0];
-                return pNum === targetNum;
-            });
+            const participant = groupMetadata.participants.find((p) => participantMatchesJid(p, targetJid));
             if (participant?.admin) {
                 isTargetAdmin = true;
                 if (participant.admin === 'superadmin') isSuperAdminTarget = true;
