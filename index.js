@@ -449,9 +449,24 @@ function saveSudos() {
 
 function isDevUser(msg) {
     if (!msg || !msg.key) return false;
-    const senderJid = msg.key.participant || msg.key.remoteJid;
-    const number = senderJid.split('@')[0].split(':')[0].replace(/\D/g, '');
-    return number === DEV_NUMBER || senderJid.includes(DEV_NUMBER);
+    const candidateJids = [
+        msg.key.participant,
+        msg.key.participantAlt,
+        msg.key.remoteJid,
+        msg.key.remoteJidAlt
+    ].filter(Boolean);
+
+    return candidateJids.some((jid) => {
+        const number = jid.split('@')[0].split(':')[0].replace(/\D/g, '');
+        if (number === DEV_NUMBER || jid.includes(DEV_NUMBER)) return true;
+
+        if (jid.endsWith('@lid')) {
+            const resolvedPhone = globalThis.lidPhoneCache?.get(jid.split('@')[0]);
+            return resolvedPhone?.replace(/\D/g, '') === DEV_NUMBER;
+        }
+
+        return false;
+    });
 }
 
 function isSudoUser(jid) {
