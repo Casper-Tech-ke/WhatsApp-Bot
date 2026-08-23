@@ -31,6 +31,22 @@ export default {
                 return msg.key.remoteJidAlt;
             }
 
+            // In groups, Baileys metadata may expose the phone number or PN
+            // for a participant even when the local LID cache is empty.
+            if (isGroup) {
+                try {
+                    const metadata = await xcasper.groupMetadata(chatId);
+                    const participant = metadata?.participants?.find((entry) =>
+                        entry.id === jid || entry.lid === jid || entry.lidJid === jid
+                    );
+                    const phoneValue = participant?.phoneNumber || participant?.pn;
+                    const phoneNumber = cleanPhone(String(phoneValue || '').split('@')[0].split(':')[0]);
+                    if (phoneNumber.length >= 7 && phoneNumber.length <= 15) {
+                        return `${phoneNumber}@s.whatsapp.net`;
+                    }
+                } catch {}
+            }
+
             return convertLidToJid(xcasper, jid);
         };
 
