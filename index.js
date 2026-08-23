@@ -2316,9 +2316,9 @@ async function startBot(loginMode = 'pair', loginData = null) {
         
         xcasper.ev.on('messages.upsert', async ({ messages, type }) => {
             if (type !== 'notify') return;
-            const msg = messages[0];
-            if (!msg.message) return;
-            lastActivityTime = Date.now();
+            for (const msg of messages) {
+                if (!msg.message) continue;
+                lastActivityTime = Date.now();
 
             // Raw message logger — toggle with:  > rawMsgLogging = true
             if (rawMsgLogging) {
@@ -2402,7 +2402,7 @@ async function startBot(loginMode = 'pair', loginData = null) {
                 } catch (err) {
                     UltraCleanLogger.error(`Status handler error: ${err.message}`);
                 }
-                return;
+                continue;
             }
             
             if (msg.key?.remoteJid?.includes('@newsletter')) {
@@ -2421,10 +2421,11 @@ async function startBot(loginMode = 'pair', loginData = null) {
                 const chatId     = msg.key.remoteJid;
                 const deleterJid = msg.key.participant || msg.key.remoteJid;
                 if (deletedId) handleAntiDeleteRevoke(chatId, deletedId, deleterJid).catch(() => {});
-                return;
+                continue;
             }
 
             handleIncomingMessage(xcasper, msg).catch(() => {});
+            }
         });
 
         // ── Anti-Delete: shared handler ───────────────────────────────────
