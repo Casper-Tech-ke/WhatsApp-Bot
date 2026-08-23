@@ -3,6 +3,8 @@
 // Resolve JID from any WhatsApp link, channel, group invite, or phone number
 // Powered by CASPER TECH KE
 
+import { convertLidToJid } from '../../lib/groupHelpers.js';
+
 export default {
     name: 'checkid',
     alias: ['id', 'cid', 'jid'],
@@ -18,7 +20,19 @@ export default {
 
         // ── helpers ──────────────────────────────────────────────────────────
 
-        const cleanPhone = (raw) => raw.replace(/\D/g, '');
+        const cleanPhone = (raw = '') => raw.replace(/\D/g, '');
+
+        const resolvePhoneJid = async (jid) => {
+            if (!jid?.endsWith('@lid')) return jid;
+
+            // In a direct message, Baileys provides the phone JID alongside
+            // the LID as `remoteJidAlt`.
+            if (!isGroup && msg.key.remoteJidAlt?.endsWith('@s.whatsapp.net')) {
+                return msg.key.remoteJidAlt;
+            }
+
+            return convertLidToJid(xcasper, jid);
+        };
 
         const buildResult = (lines) =>
             lines.join('\n') + '\n\n> checkid  ALICIAH | CASPER TECH';
@@ -63,8 +77,11 @@ export default {
 
         // ── no args & no quote → show current chat / sender ─────────────────
         if (!args.length && !quotedParticipant) {
-            const senderJid = msg.key.participant || msg.key.remoteJid;
-            const isDM = chatId.endsWith('@s.whatsapp.net');
+            const senderJid = await resolvePhoneJid(
+                msg.key.participant || msg.key.remoteJidAlt || msg.key.remoteJid
+            );
+            const resolvedChatJid = await resolvePhoneJid(msg.key.remoteJidAlt || chatId);
+            const isDM = !isGroup && !chatId.endsWith('@newsletter');
             const lines = [
                 `🆔 *CHECK ID — ALICIAH AI*\n`,
                 `📩 *Your JID:*  \`${senderJid}\``,
@@ -72,8 +89,8 @@ export default {
             if (isGroup) {
                 lines.push(`👥 *Group JID:* \`${chatId}\``);
             } else if (isDM) {
-                lines.push(`💬 *DM JID:*    \`${chatId}\``);
-                lines.push(`📱 *Number:*    +${cleanPhone(chatId.split('@')[0])}`);
+                lines.push(`💬 *DM JID:*    \`${resolvedChatJid}\``);
+                lines.push(`📱 *Number:*    +${cleanPhone(resolvedChatJid.split('@')[0])}`);
             }
             lines.push(
                 `\n📝 *Usage:*`,
@@ -90,11 +107,12 @@ export default {
 
         // ── quoted message → return quoted sender JID ────────────────────────
         if (!args.length && quotedParticipant) {
+            const resolvedQuotedJid = await resolvePhoneJid(quotedParticipant);
             const lines = [
                 `🆔 *CHECK ID — ALICIAH AI*\n`,
-                `👤 *Quoted sender JID:* \`${quotedParticipant}\``,
-                `📱 *Number:* +${cleanPhone(quotedParticipant.split('@')[0])}`,
-                `🏷️  *Type:* ${quotedParticipant.endsWith('@lid') ? 'Linked Device (LID)' : 'Standard Account'}`,
+                `👤 *Quoted sender JID:* \`${resolvedQuotedJid}\``,
+                `📱 *Number:* +${cleanPhone(resolvedQuotedJid.split('@')[0])}`,
+                `🏷️  *Type:* ${resolvedQuotedJid.endsWith('@lid') ? 'Linked Device (LID — phone unresolved)' : 'Standard Account'}`,
             ];
             await xcasper.sendMessage(chatId, { text: buildResult(lines) }, { quoted: msg });
             return;
