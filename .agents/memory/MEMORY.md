@@ -1,2 +1,3 @@
 - [Linked-device group admins](linked-device-group-admins.md) — group metadata may expose admins under LIDs; permission checks must match phone, PN, and LID identities.
 - [Profile-picture privacy](profile-picture-privacy.md) — never redistribute account profile pictures or resolved LID identities into shared chats.
+- [Group inventory privacy](group-inventory-privacy.md) — never return the bot's full group inventory in a shared chat, even to an authorized caller.
