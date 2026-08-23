@@ -82,13 +82,22 @@ export default {
             );
             const resolvedChatJid = await resolvePhoneJid(msg.key.remoteJidAlt || chatId);
             const isDM = !isGroup && !chatId.endsWith('@newsletter');
+
+            if (isGroup) {
+                const lines = [
+                    `🆔 *CHECK ID — GROUP*\n`,
+                    `👥 *Group JID:* \`${chatId}\``,
+                    `📝 *Usage:* Reply to a member's message with \`${prefix}id\` to view their ID.`
+                ];
+                await xcasper.sendMessage(chatId, { text: buildResult(lines) }, { quoted: msg });
+                return;
+            }
+
             const lines = [
                 `🆔 *CHECK ID — ALICIAH AI*\n`,
                 `📩 *Your JID:*  \`${senderJid}\``,
             ];
-            if (isGroup) {
-                lines.push(`👥 *Group JID:* \`${chatId}\``);
-            } else if (isDM) {
+            if (isDM) {
                 lines.push(`💬 *DM JID:*    \`${resolvedChatJid}\``);
                 lines.push(`📱 *Number:*    +${cleanPhone(resolvedChatJid.split('@')[0])}`);
                 if (chatId.endsWith('@lid') && resolvedChatJid !== chatId) {
