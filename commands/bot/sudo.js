@@ -30,6 +30,37 @@ export default {
 
         const toJid = (number) => `${number}@s.whatsapp.net`;
 
+        const resolveTargetNumber = async (targetJid) => {
+            if (!targetJid) return null;
+
+            const cleaned = jidManager.cleanJid(targetJid);
+            if (!cleaned.isLid) return cleanNumber(cleaned.cleanNumber || targetJid);
+
+            let resolvedPhone = globalThis.lidPhoneCache?.get(cleaned.cleanNumber);
+            if (!resolvedPhone && chatId.endsWith('@g.us')) {
+                try {
+                    const metadata = await xcasper.groupMetadata(chatId);
+                    const participant = metadata?.participants?.find((entry) =>
+                        [entry.id, entry.lid, entry.lidJid].filter(Boolean).some((jid) => jid === targetJid)
+                    );
+                    resolvedPhone = participant?.phoneNumber || participant?.pn || null;
+                } catch {}
+            }
+            if (!resolvedPhone) {
+                try { resolvedPhone = await xcasper.getJidFromLid(targetJid); } catch {}
+            }
+            if (!resolvedPhone && !chatId.endsWith('@g.us')) {
+                resolvedPhone = msg.key.remoteJidAlt || null;
+            }
+
+            return cleanNumber(String(resolvedPhone || '').split('@')[0]);
+        };
+
+        const getMentionTargetNumber = async () => {
+            const mentionedJid = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
+            return mentionedJid.length ? resolveTargetNumber(mentionedJid[0]) : null;
+        };
+
         const getQuotedTargetNumber = () => {
             const contextInfo = msg.message?.extendedTextMessage?.contextInfo;
             if (!contextInfo?.quotedMessage) return null;
@@ -41,17 +72,7 @@ export default {
                 || (!chatId.endsWith('@g.us') ? chatId : null);
 
             if (!quotedJid) return null;
-
-            const cleaned = jidManager.cleanJid(quotedJid);
-            if (cleaned.isLid) {
-                const resolvedPhone = globalThis.lidPhoneCache?.get(cleaned.cleanNumber)
-                    // Baileys includes the phone JID alongside a linked-device
-                    // JID in DMs. Use it when the cache has no LID mapping yet.
-                    || (!chatId.endsWith('@g.us') ? msg.key.remoteJidAlt : null);
-                return cleanNumber(resolvedPhone?.split('@')[0]);
-            }
-
-            return cleanNumber(cleaned.cleanNumber);
+            return resolveTargetNumber(quotedJid);
         };
 
         const isBotDev = (jid) => {
@@ -88,7 +109,7 @@ export default {
         // ── ADDSUDO ───────────────────────────────────────────────────────
         if (command === 'addsudo') {
             const input = args[0];
-            const number = cleanNumber(input) || getQuotedTargetNumber();
+            const number = await getMentionTargetNumber() || cleanNumber(input) || await getQuotedTargetNumber();
             if (!number) {
                 return xcasper.sendMessage(chatId, {
                     text: `❌ *Usage:* \`${prefix}addsudo <number>\`\n\n_Reply to someone's message in a DM with \`${prefix}addsudo\`, or provide their full number._`
@@ -102,6 +123,9 @@ export default {
             }
 
             const jid = toJid(number);
+            const existingSudo = Array.from(SUDO_USERS || []).find(
+                (sudoJid) => cleanNumber(sudoJid.split('@')[0]) === number
+            );
 
             if (isBotDev(jid)) {
                 return xcasper.sendMessage(chatId, {
@@ -115,7 +139,7 @@ export default {
                 }, { quoted: msg });
             }
 
-            if (SUDO_USERS?.has(jid)) {
+            if (existingSudo) {
                 return xcasper.sendMessage(chatId, {
                     text: `⚠️ *+${number} is already a sudo user.*`
                 }, { quoted: msg });
@@ -134,29 +158,31 @@ export default {
         // ── DELSUDO ───────────────────────────────────────────────────────
         if (command === 'delsudo') {
             const input = args[0];
-            if (!input) {
+            const number = await getMentionTargetNumber() || cleanNumber(input) || await getQuotedTargetNumber();
+            if (!number) {
                 return xcasper.sendMessage(chatId, {
-                    text: `❌ *Usage:* \`${prefix}delsudo <number>\`\n\n_Example: \`${prefix}delsudo 254712345678\`_`
+                    text: `❌ *Usage:* \`${prefix}delsudo <number>\`\n\n_Mention, reply to, or provide the sudo user's full number._`
                 }, { quoted: msg });
             }
 
-            const number = cleanNumber(input);
-            if (!number || number.length < 7) {
+            if (number.length < 7) {
                 return xcasper.sendMessage(chatId, {
-                    text: `❌ *Invalid number:* ${input}`
+                    text: `❌ *Invalid number:* ${input || 'selected user'}`
                 }, { quoted: msg });
             }
 
-            const jid = toJid(number);
+            const storedJid = Array.from(SUDO_USERS || []).find(
+                (sudoJid) => cleanNumber(sudoJid.split('@')[0]) === number
+            );
 
-            if (!SUDO_USERS?.has(jid)) {
+            if (!storedJid) {
                 return xcasper.sendMessage(chatId, {
                     text: `⚠️ *+${number} is not in the sudo list.*`
                 }, { quoted: msg });
             }
 
             if (SUDO_USERS instanceof Set) {
-                SUDO_USERS.delete(jid);
+                SUDO_USERS.delete(storedJid);
                 saveSudos();
             }
 
