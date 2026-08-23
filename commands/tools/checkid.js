@@ -15,6 +15,7 @@ export default {
     async execute(xcasper, msg, args, prefix, context) {
         const chatId = msg.key.remoteJid;
         const isGroup = chatId.endsWith('@g.us');
+        const isChannel = chatId.endsWith('@newsletter');
         const quoted = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
         const quotedParticipant = msg.message?.extendedTextMessage?.contextInfo?.participant;
 
@@ -92,12 +93,25 @@ export default {
         };
 
         // ── no args & no quote → show current chat / sender ─────────────────
+        // Channels do not expose subscriber phone identities. Whether the
+        // command is sent normally or while quoting a channel post, return
+        // only the channel identity and no general command usage.
+        if (isChannel && !args.length) {
+            const lines = [
+                `🆔 *CHECK ID — CHANNEL*\n`,
+                `📢 *Channel JID:* \`${chatId}\``,
+                `🔑 *Channel ID:* \`${chatId.split('@')[0]}\``
+            ];
+            await xcasper.sendMessage(chatId, { text: buildResult(lines) }, { quoted: msg });
+            return;
+        }
+
         if (!args.length && !quotedParticipant) {
             const senderJid = await resolvePhoneJid(
                 msg.key.participant || msg.key.remoteJidAlt || msg.key.remoteJid
             );
             const resolvedChatJid = await resolvePhoneJid(msg.key.remoteJidAlt || chatId);
-            const isDM = !isGroup && !chatId.endsWith('@newsletter');
+            const isDM = !isGroup && !isChannel;
 
             if (isGroup) {
                 const lines = [
