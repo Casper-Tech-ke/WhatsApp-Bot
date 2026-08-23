@@ -30,6 +30,27 @@ export default {
 
         const toJid = (number) => `${number}@s.whatsapp.net`;
 
+        const getQuotedTargetNumber = () => {
+            const contextInfo = msg.message?.extendedTextMessage?.contextInfo;
+            if (!contextInfo?.quotedMessage) return null;
+
+            // In a group, WhatsApp supplies the quoted sender in `participant`.
+            // In a direct chat that field can be absent, but the DM itself is
+            // always with the person whose message was quoted.
+            const quotedJid = contextInfo.participant
+                || (!chatId.endsWith('@g.us') ? chatId : null);
+
+            if (!quotedJid) return null;
+
+            const cleaned = jidManager.cleanJid(quotedJid);
+            if (cleaned.isLid) {
+                const resolvedPhone = globalThis.lidPhoneCache?.get(cleaned.cleanNumber);
+                return cleanNumber(resolvedPhone?.split('@')[0]);
+            }
+
+            return cleanNumber(cleaned.cleanNumber);
+        };
+
         const isBotDev = (jid) => {
             const num = jid.split('@')[0].replace(/\D/g, '');
             return num === DEV_NUMBER || jid.includes(DEV_NUMBER);
@@ -64,16 +85,16 @@ export default {
         // ── ADDSUDO ───────────────────────────────────────────────────────
         if (command === 'addsudo') {
             const input = args[0];
-            if (!input) {
+            const number = cleanNumber(input) || getQuotedTargetNumber();
+            if (!number) {
                 return xcasper.sendMessage(chatId, {
-                    text: `❌ *Usage:* \`${prefix}addsudo <number>\`\n\n_Example: \`${prefix}addsudo 254712345678\`_`
+                    text: `❌ *Usage:* \`${prefix}addsudo <number>\`\n\n_Reply to someone's message in a DM with \`${prefix}addsudo\`, or provide their full number._`
                 }, { quoted: msg });
             }
 
-            const number = cleanNumber(input);
             if (!number || number.length < 7) {
                 return xcasper.sendMessage(chatId, {
-                    text: `❌ *Invalid number:* ${input}\n\n_Provide a full number with country code e.g. 254712345678_`
+                    text: `❌ *Invalid number:* ${input || 'quoted sender'}\n\n_Provide a full number with country code e.g. 254712345678_`
                 }, { quoted: msg });
             }
 
