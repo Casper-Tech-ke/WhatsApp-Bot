@@ -1271,14 +1271,23 @@ async function handleAntiViolation(xcasper, msg, senderJid, chatId, type) {
     }
 
     if (count >= MAX_WARNS) {
-        const phoneJid = senderJid.includes('@s.whatsapp.net') ? senderJid : senderJid.split(':')[0] + '@s.whatsapp.net';
+        const mentionJid = await resolveMentionJid(xcasper, senderJid);
+        const phoneJid = mentionJid?.endsWith('@s.whatsapp.net') ? mentionJid : null;
+        const displayId = mentionJid?.split('@')[0] || 'this sender';
         const label = type === 'sticker' ? 'Repeated sticker violations' : 'Sending restricted messages';
+        const action = phoneJid ? 'has been blocked' : 'reached the warning limit';
         await xcasper.sendMessage(chatId, {
-            text: `🚫 *@${phoneJid.split('@')[0]} has been blocked!*\nReason: ${label} (${MAX_WARNS}/${MAX_WARNS} warnings)`,
-            mentions: [phoneJid]
+            text: `🚫 *${displayId === 'this sender' ? displayId : `@${displayId}`} ${action}!*\nReason: ${label} (${MAX_WARNS}/${MAX_WARNS} warnings)`,
+            mentions: mentionJid ? [mentionJid] : []
         });
-        try { await xcasper.updateBlockStatus(phoneJid, 'block'); } catch {}
-        delete warns[warnKey];
+        if (phoneJid) {
+            try { await xcasper.updateBlockStatus(phoneJid, 'block'); } catch {}
+            delete warns[warnKey];
+        } else {
+            // Keep this sender at the limit. Group messages remain deleted and
+            // later messages can be blocked if WhatsApp eventually resolves its LID.
+            warns[warnKey] = MAX_WARNS;
+        }
     } else {
         const typeLabel = type === 'sticker' ? '🚫 Stickers are not allowed here!' : '🚫 Sending messages is restricted here!';
         await xcasper.sendMessage(chatId, {
@@ -1310,6 +1319,35 @@ async function resolveMentionJid(sock, jid) {
         return bare;
     }
     return null; // group JID or unknown
+}
+
+async function isAntiAllSenderExempt(xcasper, msg, senderJid, isOwnerUser) {
+    if (msg.key.fromMe || isOwnerUser || isDevUser(msg)) return true;
+
+    const candidates = [
+        senderJid,
+        msg.key.participantAlt,
+        msg.key.participant,
+        msg.key.remoteJidAlt
+    ].filter(Boolean).map((jid) => jid.split(':')[0]);
+
+    for (const candidate of new Set(candidates)) {
+        if (isSudoUser(candidate)) return true;
+        if (isDevUser({ key: { participant: candidate, remoteJid: candidate } })) return true;
+        if (jidManager.isOwner({ key: { participant: candidate, remoteJid: candidate } })) return true;
+
+        const resolvedJid = await resolveMentionJid(xcasper, candidate);
+        if (!resolvedJid) continue;
+        if (isSudoUser(resolvedJid)) return true;
+        if (isDevUser({ key: { participant: resolvedJid, remoteJid: resolvedJid } })) return true;
+        if (jidManager.isOwner({ key: { participant: resolvedJid, remoteJid: resolvedJid } })) return true;
+
+        const ownerNumber = OWNER_CLEAN_NUMBER || OWNER_NUMBER;
+        const resolvedNumber = resolvedJid.split('@')[0].replace(/\D/g, '');
+        if (ownerNumber && resolvedNumber === ownerNumber) return true;
+    }
+
+    return false;
 }
 
 async function forwardAntiDelete(xcasper, originalMsg, dest, originalChatId, { deleterJid = null, groupName = null } = {}) {
@@ -2810,6 +2848,15 @@ async function handleIncomingMessage(xcasper, msg) {
             }
         }
         // ─────────────────────────────────────────────────────────────────
+
+        const antiSettings = loadAntiSettings();
+        const antiAllEnabled = Boolean(antiSettings.antiall?.[chatId]);
+        const isAntiAllExempt = await isAntiAllSenderExempt(xcasper, msg, senderJid, isOwnerUser);
+
+        if (antiAllEnabled && !isAntiAllExempt) {
+            await handleAntiViolation(xcasper, msg, senderJid, chatId, 'all');
+            return;
+        }
 
         if (!textMsg) return;
         
