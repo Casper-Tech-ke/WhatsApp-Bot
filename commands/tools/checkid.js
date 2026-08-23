@@ -91,6 +91,9 @@ export default {
             } else if (isDM) {
                 lines.push(`💬 *DM JID:*    \`${resolvedChatJid}\``);
                 lines.push(`📱 *Number:*    +${cleanPhone(resolvedChatJid.split('@')[0])}`);
+                if (chatId.endsWith('@lid') && resolvedChatJid !== chatId) {
+                    lines.push(`🔗 *Linked Device ID:* \`${chatId}\``);
+                }
             }
             lines.push(
                 `\n📝 *Usage:*`,
@@ -114,6 +117,9 @@ export default {
                 `📱 *Number:* +${cleanPhone(resolvedQuotedJid.split('@')[0])}`,
                 `🏷️  *Type:* ${resolvedQuotedJid.endsWith('@lid') ? 'Linked Device (LID — phone unresolved)' : 'Standard Account'}`,
             ];
+            if (quotedParticipant.endsWith('@lid') && resolvedQuotedJid !== quotedParticipant) {
+                lines.push(`🔗 *Linked Device ID:* \`${quotedParticipant}\``);
+            }
             await xcasper.sendMessage(chatId, { text: buildResult(lines) }, { quoted: msg });
             return;
         }
