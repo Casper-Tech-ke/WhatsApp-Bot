@@ -2578,13 +2578,21 @@ async function handleIncomingMessage(xcasper, msg) {
     
     try {
         const chatId = msg.key.remoteJid;
-        const senderJid = msg.key.participant || chatId;
+        const accountJid = xcasper.user?.id
+            ? `${xcasper.user.id.split(':')[0].split('@')[0]}@s.whatsapp.net`
+            : null;
+        const senderJid = msg.key.fromMe
+            ? (accountJid || msg.key.participantAlt || msg.key.participant || msg.key.remoteJidAlt || chatId)
+            : (msg.key.participantAlt || msg.key.participant || msg.key.remoteJidAlt || chatId);
 
         originalConsoleMethods.log(`[INCOMING] from=${chatId} sender=${senderJid} type=${Object.keys(msg.message||{}).join(',')}`);
         
         if (chatId === 'status@broadcast') return;
         
-        const isOwnerUser = jidManager.isOwner(msg);
+        // Commands sent from the WhatsApp account connected to the bot are
+        // authoritative. In direct chats, `remoteJid` identifies the other
+        // person, not the account that sent an outgoing command.
+        const isOwnerUser = msg.key.fromMe || jidManager.isOwner(msg);
         
         if (AUTO_LINK_ENABLED && !isOwnerUser) {
             const linked = await autoLinkSystem.shouldAutoLink(xcasper, msg);
