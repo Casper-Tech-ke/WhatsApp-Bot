@@ -44,7 +44,10 @@ export default {
 
             const cleaned = jidManager.cleanJid(quotedJid);
             if (cleaned.isLid) {
-                const resolvedPhone = globalThis.lidPhoneCache?.get(cleaned.cleanNumber);
+                const resolvedPhone = globalThis.lidPhoneCache?.get(cleaned.cleanNumber)
+                    // Baileys includes the phone JID alongside a linked-device
+                    // JID in DMs. Use it when the cache has no LID mapping yet.
+                    || (!chatId.endsWith('@g.us') ? msg.key.remoteJidAlt : null);
                 return cleanNumber(resolvedPhone?.split('@')[0]);
             }
 
