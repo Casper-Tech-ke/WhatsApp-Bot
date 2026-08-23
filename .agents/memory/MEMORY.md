@@ -1,0 +1,1 @@
+- [Linked-device group admins](linked-device-group-admins.md) — group metadata may expose admins under LIDs; permission checks must match phone, PN, and LID identities.
