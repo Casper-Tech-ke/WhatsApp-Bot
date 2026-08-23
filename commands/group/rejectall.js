@@ -2,7 +2,7 @@ import { buildGroupCtx, fetchGroupCtx } from '../../lib/groupHelpers.js';
 
 export default {
     name: 'rejectall',
-    alias: ['declineall'],
+    alias: ['declineall', 'rejecteall'],
     description: 'Reject all pending join requests in the group',
     category: 'group',
     async execute(xcasper, msg, args, prefix, ctx) {

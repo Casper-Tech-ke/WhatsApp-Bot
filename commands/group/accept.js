@@ -1,4 +1,4 @@
-import { buildGroupCtx, fetchGroupCtx } from '../../lib/groupHelpers.js';
+import { buildGroupCtx, fetchGroupCtx, resolveTargetJid } from '../../lib/groupHelpers.js';
 
 export default {
     name: 'accept',
@@ -7,18 +7,24 @@ export default {
     category: 'group',
     async execute(xcasper, msg, args, prefix, ctx) {
         const base = buildGroupCtx(xcasper, msg, args, prefix);
-        const { from, reply, react, botPrefix } = base;
-        const { isGroup, isBotAdmin, isAdmin, isSuperAdmin, isSuperUser } = await fetchGroupCtx(xcasper, msg, ctx);
+        const { from, reply, react, botPrefix, q, mentionedJid, quotedUser } = base;
+        const { isGroup, isBotAdmin, isAdmin, isSuperAdmin, isSuperUser, groupMetadata } = await fetchGroupCtx(xcasper, msg, ctx);
 
         if (!isGroup) return reply('❌ This command only works in groups!');
         if (!isBotAdmin) return reply('❌ Bot is not an admin in this group!');
         if (!isAdmin && !isSuperAdmin && !isSuperUser) return reply('❌ You must be an admin to use this command!');
 
-        if (!args[0]) return reply(`❌ Please provide a phone number.\n\n*Usage:* ${botPrefix}accept 254712345678`);
+        const userJid = await resolveTargetJid(xcasper, { mentionedJid, quotedUser, q, groupMetadata });
+        if (!userJid || userJid.endsWith('@lid')) {
+            return reply(
+                `❌ Please provide, mention, or reply to a pending member.\n\n` +
+                `*Usage:* ${botPrefix}accept 254712345678\n` +
+                `*Or:* ${botPrefix}accept @member`
+            );
+        }
 
         try {
-            const number = args[0].replace(/[^0-9]/g, '');
-            const userJid = `${number}@s.whatsapp.net`;
+            const number = userJid.split('@')[0].replace(/\D/g, '');
             await xcasper.groupRequestParticipantsUpdate(from, [userJid], 'approve');
             await react('✅');
             return reply(`✅ Successfully approved @${number}'s join request!`, { mentions: [userJid] });
