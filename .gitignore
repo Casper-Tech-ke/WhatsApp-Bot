@@ -1,10 +1,9 @@
 # Node modules
 node_modules/
 
-# JSON config files (except package.json and package-lock.json)
+# JSON config files (except package.json)
 *.json
 !package.json
-!package-lock.json
 
 # Specific JSON files to ignore (alternative approach)
 antiviewonce_config.json
