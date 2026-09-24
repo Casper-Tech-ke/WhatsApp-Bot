@@ -32,33 +32,25 @@ export default {
         await xcasper.sendPresenceUpdate('composing', chatId);
         
         try {
-            // Call the Gemini API - using 'prompt' as the parameter (from your URL)
-            const response = await axios.get(`https://apiz.xcasper.space/api/ai/gemini?prompt=${encodeURIComponent(query)}`);
-            
-            // Check for a successful response (adjust based on actual API response)
-            if (response.data && response.data.success !== false) {
-                // Try to get the reply from common response structures
-                const reply = response.data.reply || response.data.response || response.data.message || response.data.result || "I'm not sure how to respond to that.";
-                
-                await xcasper.sendMessage(chatId, { 
-                    text: `${reply}\n\n> gemini  ALICIAH | CASPER TECH`
-                }, { quoted: msg });
-            } else {
-                await xcasper.sendMessage(chatId, { 
-                    text: `❌ Error: Could not get response from Gemini AI\n\n> gemini  ALICIAH | CASPER TECH`
-                }, { quoted: msg });
+            const response = await axios.get('https://apiz.xcasper.space/api/ai/gemini', {
+                params: { query },
+                timeout: 90000
+            });
+
+            if (response.data && response.data.success === false) {
+                throw new Error(response.data.error || 'Could not get response from Gemini AI');
             }
-            
+
+            const reply = response.data?.data?.reply || response.data?.reply || response.data?.response || response.data?.message || response.data?.result || "I'm not sure how to respond to that.";
+
+            await xcasper.sendMessage(chatId, {
+                text: `${reply}\n\n> gemini  ALICIAH | CASPER TECH`
+            }, { quoted: msg });
         } catch (error) {
             console.error('Gemini API Error:', error.message);
-            
-            // Provide a helpful error message
-            let errorMsg = error.message;
-            if (error.response) {
-                errorMsg = `API returned status ${error.response.status}`;
-            }
-            
-            await xcasper.sendMessage(chatId, { 
+            const errorMsg = error.response?.data?.error || error.message;
+
+            await xcasper.sendMessage(chatId, {
                 text: `❌ Error: ${errorMsg}\n\n> gemini  ALICIAH | CASPER TECH`
             }, { quoted: msg });
         }

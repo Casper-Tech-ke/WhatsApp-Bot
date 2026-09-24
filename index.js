@@ -94,6 +94,8 @@ const BOT_SETTINGS_FILE = './bot_settings.json';
 const BOT_MODE_FILE = './bot_mode.json';
 const WHITELIST_FILE = './whitelist.json';
 const BLOCKED_USERS_FILE = './blocked_users.json';
+const ALICE_STATE_FILE = './data/alice_state.json';
+const ALICE_MEMORY_FILE = './data/alice_memory.json';
 const ANTI_SETTINGS_FILE = './data/anti_settings.json';
 const WARN_COUNTS_FILE   = './data/warn_counts.json';
 const SUDO_FILE = './data/sudo.json';
@@ -423,6 +425,206 @@ setInterval(cleanOldAntiDeleteEntries, 60 * 60 * 1000);
 let heartbeatInterval = null, lastActivityTime = Date.now();
 let BOT_MODE = 'public', WHITELIST = new Set(), AUTO_LINK_ENABLED = true;
 let SUDO_USERS = new Set();
+let ALICE_ENABLED = false;
+let ALICE_MEMORIES = new Map();
+
+function normalizeAliceUserKey(jid) {
+    if (!jid) return 'unknown';
+    const raw = String(jid).trim();
+    if (!raw) return 'unknown';
+    const withoutColon = raw.split(':')[0];
+    const normalized = withoutColon.includes('@') ? withoutColon : `${withoutColon}@s.whatsapp.net`;
+    const [numberPart] = normalized.split('@');
+    const digits = numberPart.replace(/\D/g, '');
+    return digits ? `${digits}@s.whatsapp.net` : normalized.toLowerCase();
+}
+
+function loadAliceState() {
+    try {
+        if (!fs.existsSync('./data')) fs.mkdirSync('./data', { recursive: true });
+        if (fs.existsSync(ALICE_STATE_FILE)) {
+            const data = JSON.parse(fs.readFileSync(ALICE_STATE_FILE, 'utf8'));
+            ALICE_ENABLED = !!data.enabled;
+        } else {
+            ALICE_ENABLED = false;
+        }
+    } catch {
+        ALICE_ENABLED = false;
+    }
+    globalThis.AliceBot = globalThis.AliceBot || {};
+    globalThis.AliceBot.enabled = ALICE_ENABLED;
+    return ALICE_ENABLED;
+}
+
+function saveAliceState() {
+    try {
+        if (!fs.existsSync('./data')) fs.mkdirSync('./data', { recursive: true });
+        fs.writeFileSync(ALICE_STATE_FILE, JSON.stringify({ enabled: !!ALICE_ENABLED, updatedAt: new Date().toISOString() }, null, 2));
+        globalThis.AliceBot = globalThis.AliceBot || {};
+        globalThis.AliceBot.enabled = ALICE_ENABLED;
+    } catch {}
+}
+
+function loadAliceMemory() {
+    try {
+        if (!fs.existsSync('./data')) fs.mkdirSync('./data', { recursive: true });
+        ALICE_MEMORIES = new Map();
+        if (fs.existsSync(ALICE_MEMORY_FILE)) {
+            const data = JSON.parse(fs.readFileSync(ALICE_MEMORY_FILE, 'utf8'));
+            const records = Array.isArray(data.records) ? data.records : [];
+            for (const record of records) {
+                if (record?.jid) ALICE_MEMORIES.set(record.jid, record);
+            }
+        }
+    } catch {
+        ALICE_MEMORIES = new Map();
+    }
+    globalThis.AliceBot = globalThis.AliceBot || {};
+    globalThis.AliceBot.memories = ALICE_MEMORIES;
+    return ALICE_MEMORIES;
+}
+
+function saveAliceMemory() {
+    try {
+        if (!fs.existsSync('./data')) fs.mkdirSync('./data', { recursive: true });
+        const records = Array.from(ALICE_MEMORIES.values()).map(entry => ({
+            ...entry,
+            updatedAt: entry.updatedAt || new Date().toISOString()
+        }));
+        fs.writeFileSync(ALICE_MEMORY_FILE, JSON.stringify({ records }, null, 2));
+        globalThis.AliceBot = globalThis.AliceBot || {};
+        globalThis.AliceBot.memories = ALICE_MEMORIES;
+    } catch {}
+}
+
+function getAliceProfile(jid, pushName = '') {
+    const key = normalizeAliceUserKey(jid);
+    const existing = ALICE_MEMORIES.get(key) || {
+        jid: key,
+        name: pushName || '',
+        lastSeen: new Date().toISOString(),
+        messageCount: 0,
+        memory: 'No saved memory yet. This user is new to Alice.',
+        topics: [],
+        updatedAt: new Date().toISOString()
+    };
+    return { ...existing, jid: key, name: existing.name || pushName || key };
+}
+
+function storeAliceProfile(profile) {
+    if (!profile?.jid) return;
+    const current = getAliceProfile(profile.jid, profile.name || '');
+    const merged = {
+        ...current,
+        ...profile,
+        jid: normalizeAliceUserKey(profile.jid),
+        updatedAt: new Date().toISOString()
+    };
+    ALICE_MEMORIES.set(merged.jid, merged);
+    saveAliceMemory();
+    return merged;
+}
+
+function isAliceAuthorizedUser(msg) {
+    if (!msg || !msg.key) return false;
+    const senderJid = msg.key.participant || msg.key.remoteJid || msg.key.remoteJidAlt || msg.key.participantAlt;
+    if (isDevUser(msg)) return true;
+    if (jidManager.isOwner(msg)) return true;
+    if (isSudoUser(senderJid)) return true;
+    return false;
+}
+
+function isAliceActivationMessage(textMsg, msg) {
+    if (!textMsg || !msg) return false;
+    const trimmed = textMsg.trim();
+    if (!trimmed) return false;
+    if (!/^alice(?:\s+(on|off|enable|disable|start|stop))?$/i.test(trimmed)) return false;
+    return isAliceAuthorizedUser(msg);
+}
+
+function shouldAliceReply(msg, chatId, senderJid, textMsg, accountJid) {
+    if (!ALICE_ENABLED || !msg || !chatId) return false;
+    if (!textMsg || !textMsg.trim()) return false;
+    const quoted = getBaileysQuotedMessage(msg, chatId);
+    const mentionedBot = Array.isArray(msg.message?.extendedTextMessage?.contextInfo?.mentionedJid)
+        && msg.message.extendedTextMessage.contextInfo.mentionedJid.some(jid => jid === accountJid || jid === senderJid || jid.endsWith('@s.whatsapp.net') && jid.includes('0'));
+    const quotedBot = !!quoted && (
+        quoted.sender === accountJid || quoted.key?.participant === accountJid || quoted.key?.remoteJid === accountJid
+    );
+    const mentionsAlice = /(^|\s)alice(\s|$|[?.!])/i.test(textMsg);
+    return quotedBot || mentionedBot || mentionsAlice;
+}
+
+async function callAliceClaude(query, identityContext = '') {
+    try {
+        const response = await axios.get('https://apiz.xcasper.space/api/ai/claude', {
+            params: { query: `${identityContext}\n\nUser message: ${query}` },
+            timeout: 90000
+        });
+
+        const payload = response.data?.data || response.data || {};
+        const reply = payload.reply || payload.answer || payload.response || payload.message || payload.result || payload.text || 'Alice is here.';
+        return typeof reply === 'string' ? reply.trim() : String(reply);
+    } catch (error) {
+        const detail = error.response?.data?.error || error.message || 'Claude failed to answer';
+        throw new Error(detail);
+    }
+}
+
+async function handleAliceInteraction(xcasper, msg, textMsg, senderJid) {
+    if (!msg || !msg.key || !textMsg) return false;
+    const chatId = msg.key.remoteJid;
+    const accountJid = xcasper.user?.id ? `${xcasper.user.id.split(':')[0].split('@')[0]}@s.whatsapp.net` : null;
+    const authorized = isAliceAuthorizedUser(msg);
+
+    if (isAliceActivationMessage(textMsg, msg)) {
+        const turnOn = /on|enable|start|activate/i.test(textMsg.trim());
+        const turnOff = /off|disable|stop/i.test(textMsg.trim());
+        if (turnOn || (!turnOff && !ALICE_ENABLED)) {
+            ALICE_ENABLED = true;
+            saveAliceState();
+            await xcasper.sendMessage(chatId, { text: '✅ *Alice is now active.*\n\nShe will answer quoted group mentions and remember users in the local DB.' }, { quoted: msg });
+            return true;
+        }
+        if (turnOff) {
+            ALICE_ENABLED = false;
+            saveAliceState();
+            await xcasper.sendMessage(chatId, { text: '🛑 *Alice has been turned off.*' }, { quoted: msg });
+            return true;
+        }
+    }
+
+    if (!ALICE_ENABLED && !authorized) return false;
+    if (!shouldAliceReply(msg, chatId, senderJid, textMsg, accountJid)) return false;
+
+    const key = normalizeAliceUserKey(senderJid);
+    const profile = getAliceProfile(key, msg.pushName || '');
+    profile.name = profile.name || msg.pushName || key;
+    profile.lastSeen = new Date().toISOString();
+    profile.messageCount = (profile.messageCount || 0) + 1;
+    profile.memory = profile.memory || 'No saved memory yet.';
+
+    const history = Array.isArray(profile.history) ? profile.history : [];
+    history.push({ text: textMsg, at: new Date().toISOString(), chatId });
+    if (history.length > 12) history.shift();
+    profile.history = history;
+    storeAliceProfile(profile);
+
+    const memorySummary = profile.memory && profile.memory !== 'No saved memory yet.' ? `Memory: ${profile.memory}` : 'Memory: This user is new to Alice.';
+    const prompt = `You are Alice, a warm helpful WhatsApp AI assistant. You are currently active and in a group chat. Keep replies natural and brief. Use this memory for the user: ${memorySummary}. User display name: ${profile.name}. Current chat: ${chatId}. The user says: ${textMsg}. Respond as Alice in a friendly WhatsApp tone.`;
+
+    try {
+        const reply = await callAliceClaude(prompt, `Alice user profile: ${profile.name}. ${memorySummary}`);
+        await xcasper.sendMessage(chatId, { text: `${reply}\n\n> Alice • ALICIAH AI` }, { quoted: msg });
+        profile.memory = `${profile.memory || 'No saved memory yet.'} | Latest topic: ${textMsg.slice(0, 180)}`;
+        profile.updatedAt = new Date().toISOString();
+        storeAliceProfile(profile);
+        return true;
+    } catch (error) {
+        await xcasper.sendMessage(chatId, { text: `❌ *Alice failed:* ${error.message}\n\n> Alice • ALICIAH AI` }, { quoted: msg });
+        return true;
+    }
+}
 
 function loadSudos() {
     try {
@@ -482,6 +684,8 @@ function isSudoUser(jid) {
 }
 
 loadSudos();
+loadAliceState();
+loadAliceMemory();
 let AUTO_CONNECT_COMMAND_ENABLED = true, AUTO_ULTIMATE_FIX_ENABLED = true;
 let isWaitingForPairingCode = false, RESTART_AUTO_FIX_ENABLED = true;
 let hasAutoConnectedOnStart = false;
@@ -3087,7 +3291,10 @@ async function handleIncomingMessage(xcasper, msg) {
         }
         
         const command = commands.get(commandName);
-        if (command) {
+        const isAliceCommand = commandName === 'chatbot' || commandName === 'alice' || commandName === 'alicebot';
+        const isAlicePrompt = isAliceCommand && args.length > 0 && !['on', 'off', 'enable', 'disable', 'start', 'stop', 'activate', 'deactivate', 'status', 'state'].includes(args[0].toLowerCase());
+
+        if (command && !isAlicePrompt) {
             const hasPermission = await checkCommandPermissions(xcasper, msg, command, isOwnerUser, chatId, senderJid);
             if (!hasPermission) return;
             
@@ -3105,6 +3312,16 @@ async function handleIncomingMessage(xcasper, msg) {
                     isOwner: () => jidManager.isOwner(msg),
                     isDev: () => isDevUser(msg),
                     isSudo: () => isSudoUser(senderJid),
+                    isAliceEnabled: () => ALICE_ENABLED,
+                    setAliceEnabled: (enabled) => {
+                        ALICE_ENABLED = !!enabled;
+                        saveAliceState();
+                        return ALICE_ENABLED;
+                    },
+                    getAliceState: () => ({ enabled: ALICE_ENABLED, memoryCount: ALICE_MEMORIES.size }),
+                    saveAliceState,
+                    loadAliceState,
+                    ALICE_ENABLED,
                     DEV_NUMBER,
                     SUDO_USERS,
                     loadSudos,
@@ -3131,6 +3348,12 @@ async function handleIncomingMessage(xcasper, msg) {
             } catch (error) {
                 await xcasper.sendMessage(chatId, { text: `❌ Command failed: ${error.message}` }, { quoted: msg }).catch(() => {});
             }
+        } else if (isAlicePrompt && ALICE_ENABLED) {
+            await handleAliceInteraction(xcasper, msg, textMsg, senderJid);
+        } else if (!commandName && isAliceActivationMessage(textMsg, msg)) {
+            await handleAliceInteraction(xcasper, msg, textMsg, senderJid);
+        } else if (!commandName && ALICE_ENABLED && shouldAliceReply(msg, chatId, senderJid, textMsg, xcasper.user?.id ? `${xcasper.user.id.split(':')[0].split('@')[0]}@s.whatsapp.net` : null)) {
+            await handleAliceInteraction(xcasper, msg, textMsg, senderJid);
         }
     } catch (error) {
         originalConsoleMethods.log(`[MSG HANDLER ERROR] ${error.message}\n${error.stack}`);

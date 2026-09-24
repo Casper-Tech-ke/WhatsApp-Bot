@@ -27,7 +27,9 @@ export default {
         getCurrentPrefix,
         isPrefixless,
         getAutoStatusSettings,
-        saveAutoStatusSettings
+        saveAutoStatusSettings,
+        isAliceEnabled,
+        setAliceEnabled
     }) {
         const chatId = msg.key.remoteJid;
         const sub = args[0]?.toLowerCase();
@@ -148,6 +150,37 @@ export default {
 
             return xcasper.sendMessage(chatId, {
                 text: `✅ *Bot Name Updated!*\n\n📛 New name: *${newName}*\n\n_The name change takes effect immediately for all new messages._`
+            }, { quoted: msg });
+        }
+
+        if (sub === 'chatbot' || sub === 'alice') {
+            const mode = (args[1] || 'status').toLowerCase();
+            const onModes = ['on', 'enable', 'start', 'activate'];
+            const offModes = ['off', 'disable', 'stop', 'deactivate'];
+
+            if (mode === 'status' || mode === 'state') {
+                const enabled = !!isAliceEnabled?.();
+                return xcasper.sendMessage(chatId, {
+                    text: `🤖 *Alice Chatbot Status*\n\n${enabled ? '✅ Enabled' : '❌ Disabled'}\n\nUse:\n• \`${prefix}chatbot on\`\n• \`${prefix}chatbot off\`\n• \`${prefix}chatbot status\``
+                }, { quoted: msg });
+            }
+
+            if (onModes.includes(mode)) {
+                setAliceEnabled(true);
+                return xcasper.sendMessage(chatId, {
+                    text: `✅ *Alice Chatbot Enabled*\n\nThe assistant is active in groups and DMs and will respond when mentioned or quoted by approved users.`
+                }, { quoted: msg });
+            }
+
+            if (offModes.includes(mode)) {
+                setAliceEnabled(false);
+                return xcasper.sendMessage(chatId, {
+                    text: `🛑 *Alice Chatbot Disabled*\n\nThe assistant is off until re-enabled by an owner, dev, or sudo user.`
+                }, { quoted: msg });
+            }
+
+            return xcasper.sendMessage(chatId, {
+                text: `❌ *Usage:* \`${prefix}set chatbot on|off|status\`\n\nExamples:\n• \`${prefix}set chatbot on\`\n• \`${prefix}set chatbot off\`\n• \`${prefix}set chatbot status\``
             }, { quoted: msg });
         }
 
