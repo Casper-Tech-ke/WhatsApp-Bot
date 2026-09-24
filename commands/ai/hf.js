@@ -34,7 +34,7 @@ export default {
         
         try {
             // Call the HuggingFace API
-            const response = await axios.get(`https://apis.xcasper.space/api/ai/huggingface?prompt=${encodeURIComponent(query)}`);
+            const response = await axios.get(`https://apiz.xcasper.space/api/ai/huggingface?prompt=${encodeURIComponent(query)}`);
             
             if (response.data && response.data.success) {
                 const reply = response.data.reply;

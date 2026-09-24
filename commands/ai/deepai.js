@@ -57,7 +57,7 @@ export default {
         
         try {
             // Call the DeepAI API
-            const response = await axios.get(`https://apis.xcasper.space/api/ai/deepai?text=${encodeURIComponent(prompt)}&style=${encodeURIComponent(style)}`);
+            const response = await axios.get(`https://apiz.xcasper.space/api/ai/deepai?text=${encodeURIComponent(prompt)}&style=${encodeURIComponent(style)}`);
             
             if (response.data && response.data.success && response.data.image_url) {
                 const imageUrl = response.data.image_url;

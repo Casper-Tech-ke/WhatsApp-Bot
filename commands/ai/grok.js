@@ -37,7 +37,7 @@ export default {
         
         try {
             // Call the Grok API
-            const response = await axios.get(`https://apis.xcasper.space/api/ai/grok?query=${encodeURIComponent(query)}`);
+            const response = await axios.get(`https://apiz.xcasper.space/api/ai/grok?query=${encodeURIComponent(query)}`);
             
             if (response.data && response.data.success) {
                 const reply = response.data.reply;

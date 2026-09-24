@@ -34,7 +34,7 @@ export default {
         
         try {
             // Call the ChatGPT-4o API
-            const response = await axios.get(`https://apis.xcasper.space/api/ai/chatgpt4o?prompt=${encodeURIComponent(query)}`);
+            const response = await axios.get(`https://apiz.xcasper.space/api/ai/chatgpt4o?prompt=${encodeURIComponent(query)}`);
             
             if (response.data && response.data.success) {
                 const reply = response.data.reply;

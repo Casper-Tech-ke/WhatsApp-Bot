@@ -38,7 +38,7 @@ export default {
         
         try {
             // Call the MagicStudio API
-            const response = await axios.get(`https://apis.xcasper.space/api/ai/magicstudio?prompt=${encodeURIComponent(prompt)}`);
+            const response = await axios.get(`https://apiz.xcasper.space/api/ai/magicstudio?prompt=${encodeURIComponent(prompt)}`);
             
             if (response.data && response.data.success && response.data.image_url) {
                 const imageUrl = response.data.image_url;

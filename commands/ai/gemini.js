@@ -33,7 +33,7 @@ export default {
         
         try {
             // Call the Gemini API - using 'prompt' as the parameter (from your URL)
-            const response = await axios.get(`https://apis.xcasper.space/api/ai/gemini?prompt=${encodeURIComponent(query)}`);
+            const response = await axios.get(`https://apiz.xcasper.space/api/ai/gemini?prompt=${encodeURIComponent(query)}`);
             
             // Check for a successful response (adjust based on actual API response)
             if (response.data && response.data.success !== false) {

@@ -39,7 +39,7 @@ export default {
         
         try {
             // Call the Pollinations Image API
-            const response = await axios.get(`https://apis.xcasper.space/api/ai/pollinations-image?prompt=${encodeURIComponent(prompt)}&model=flux`);
+            const response = await axios.get(`https://apiz.xcasper.space/api/ai/pollinations-image?prompt=${encodeURIComponent(prompt)}&model=flux`);
             
             if (response.data && response.data.success && response.data.image_url) {
                 const imageUrl = response.data.image_url;

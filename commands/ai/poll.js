@@ -33,7 +33,7 @@ export default {
         
         try {
             // Call the Pollinations API
-            const response = await axios.get(`https://apis.xcasper.space/api/ai/pollinations?prompt=${encodeURIComponent(query)}`);
+            const response = await axios.get(`https://apiz.xcasper.space/api/ai/pollinations?prompt=${encodeURIComponent(query)}`);
             
             if (response.data && response.data.success) {
                 const reply = response.data.reply;

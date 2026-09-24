@@ -33,7 +33,7 @@ export default {
         
         try {
             // Call the Mistral API
-            const response = await axios.get(`https://apis.xcasper.space/api/ai/mistral?message=${encodeURIComponent(query)}`);
+            const response = await axios.get(`https://apiz.xcasper.space/api/ai/mistral?message=${encodeURIComponent(query)}`);
             
             if (response.data && response.data.success) {
                 const reply = response.data.reply;
