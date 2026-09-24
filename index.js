@@ -542,19 +542,80 @@ function isAliceActivationMessage(textMsg, msg) {
     return isAliceAuthorizedUser(msg);
 }
 
+function normalizeBaileysJidIdentity(jid) {
+    const raw = String(jid || '').split(':')[0].trim();
+    if (!raw) return { digits: '', normalized: '' };
+    const lower = raw.toLowerCase();
+    const local = lower.split('@')[0] || lower;
+    const digits = (local.match(/\d+/g) || []).join('');
+    return { digits, normalized: lower };
+}
+
+function isSamePersonJid(candidate, other) {
+    const a = normalizeBaileysJidIdentity(candidate);
+    const b = normalizeBaileysJidIdentity(other);
+    if (!a.normalized || !b.normalized) return false;
+    if (a.digits && b.digits && a.digits === b.digits) return true;
+    if (a.normalized === b.normalized) return true;
+    const aSuffix = a.normalized.split('@')[1];
+    const bSuffix = b.normalized.split('@')[1];
+    if (aSuffix && bSuffix && a.normalized.split('@')[0] === b.normalized.split('@')[0]) return true;
+    return false;
+}
+
+function collectQuotedIdentityCandidates(msg, chatId) {
+    const candidates = [];
+    const contextInfo = msg.message?.extendedTextMessage?.contextInfo
+        || msg.message?.ephemeralMessage?.message?.extendedTextMessage?.contextInfo
+        || msg.message?.imageMessage?.contextInfo
+        || msg.message?.videoMessage?.contextInfo
+        || msg.message?.stickerMessage?.contextInfo
+        || {};
+
+    candidates.push(
+        contextInfo.participant,
+        contextInfo.participantAlt,
+        contextInfo.remoteJid,
+        contextInfo.remoteJidAlt,
+        contextInfo.sender,
+        msg.key?.participant,
+        msg.key?.participantAlt,
+        msg.key?.remoteJid,
+        msg.key?.remoteJidAlt,
+        chatId,
+        msg.key?.fromMe ? contextInfo.participant : null
+    );
+
+    const quoted = getBaileysQuotedMessage(msg, chatId);
+    if (quoted) {
+        candidates.push(
+            quoted.sender,
+            quoted.participant,
+            quoted.key?.participant,
+            quoted.key?.remoteJid,
+            quoted.contextInfo?.participant,
+            quoted.contextInfo?.participantAlt,
+            quoted.contextInfo?.remoteJid,
+            quoted.contextInfo?.remoteJidAlt
+        );
+    }
+
+    return candidates.filter(Boolean).map(String).filter((jid, index, arr) => arr.indexOf(jid) === index);
+}
+
 function shouldAliceReply(msg, chatId, senderJid, textMsg, accountJids = []) {
     if (!ALICE_ENABLED || !msg || !chatId) return false;
     if (!textMsg || !textMsg.trim()) return false;
     const quoted = getBaileysQuotedMessage(msg, chatId);
     const botJidSet = new Set((Array.isArray(accountJids) ? accountJids : [accountJids]).filter(Boolean));
-    const normalizeJid = (jid) => String(jid || '').split(':')[0].toLowerCase();
     const isBotJid = (jid) => {
-        const normalized = normalizeJid(jid);
-        return normalized && Array.from(botJidSet).some(botJid => normalizeJid(botJid) === normalized);
+        if (!jid) return false;
+        return Array.from(botJidSet).some(botJid => isSamePersonJid(jid, botJid));
     };
     const mentionedBot = Array.isArray(msg.message?.extendedTextMessage?.contextInfo?.mentionedJid)
         && msg.message.extendedTextMessage.contextInfo.mentionedJid.some(isBotJid);
-    const quotedBot = !!quoted && (
+    const quotedCandidates = collectQuotedIdentityCandidates(msg, chatId);
+    const quotedBot = quotedCandidates.some(isBotJid) || !!quoted && (
         isBotJid(quoted.sender) || isBotJid(quoted.key?.participant) || isBotJid(quoted.key?.remoteJid)
     );
     const mentionsAlice = /(^|\s)alice(\s|$|[?.!])/i.test(textMsg);
