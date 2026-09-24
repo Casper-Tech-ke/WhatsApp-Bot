@@ -542,14 +542,20 @@ function isAliceActivationMessage(textMsg, msg) {
     return isAliceAuthorizedUser(msg);
 }
 
-function shouldAliceReply(msg, chatId, senderJid, textMsg, accountJid) {
+function shouldAliceReply(msg, chatId, senderJid, textMsg, accountJids = []) {
     if (!ALICE_ENABLED || !msg || !chatId) return false;
     if (!textMsg || !textMsg.trim()) return false;
     const quoted = getBaileysQuotedMessage(msg, chatId);
+    const botJidSet = new Set((Array.isArray(accountJids) ? accountJids : [accountJids]).filter(Boolean));
+    const normalizeJid = (jid) => String(jid || '').split(':')[0].toLowerCase();
+    const isBotJid = (jid) => {
+        const normalized = normalizeJid(jid);
+        return normalized && Array.from(botJidSet).some(botJid => normalizeJid(botJid) === normalized);
+    };
     const mentionedBot = Array.isArray(msg.message?.extendedTextMessage?.contextInfo?.mentionedJid)
-        && msg.message.extendedTextMessage.contextInfo.mentionedJid.some(jid => jid === accountJid || jid === senderJid || jid.endsWith('@s.whatsapp.net') && jid.includes('0'));
+        && msg.message.extendedTextMessage.contextInfo.mentionedJid.some(isBotJid);
     const quotedBot = !!quoted && (
-        quoted.sender === accountJid || quoted.key?.participant === accountJid || quoted.key?.remoteJid === accountJid
+        isBotJid(quoted.sender) || isBotJid(quoted.key?.participant) || isBotJid(quoted.key?.remoteJid)
     );
     const mentionsAlice = /(^|\s)alice(\s|$|[?.!])/i.test(textMsg);
     return quotedBot || mentionedBot || mentionsAlice;
@@ -574,7 +580,12 @@ async function callAliceClaude(query, identityContext = '') {
 async function handleAliceInteraction(xcasper, msg, textMsg, senderJid) {
     if (!msg || !msg.key || !textMsg) return false;
     const chatId = msg.key.remoteJid;
-    const accountJid = xcasper.user?.id ? `${xcasper.user.id.split(':')[0].split('@')[0]}@s.whatsapp.net` : null;
+    const accountJids = [
+        xcasper.user?.id,
+        xcasper.user?.lid,
+        xcasper.user?.phoneNumber,
+        xcasper.user?.jid
+    ].filter(Boolean);
     const authorized = isAliceAuthorizedUser(msg);
 
     if (isAliceActivationMessage(textMsg, msg)) {
@@ -595,7 +606,7 @@ async function handleAliceInteraction(xcasper, msg, textMsg, senderJid) {
     }
 
     if (!ALICE_ENABLED && !authorized) return false;
-    if (!shouldAliceReply(msg, chatId, senderJid, textMsg, accountJid)) return false;
+    if (!shouldAliceReply(msg, chatId, senderJid, textMsg, accountJids)) return false;
 
     const key = normalizeAliceUserKey(senderJid);
     const profile = getAliceProfile(key, msg.pushName || '');
@@ -3352,7 +3363,12 @@ async function handleIncomingMessage(xcasper, msg) {
             await handleAliceInteraction(xcasper, msg, textMsg, senderJid);
         } else if (!commandName && isAliceActivationMessage(textMsg, msg)) {
             await handleAliceInteraction(xcasper, msg, textMsg, senderJid);
-        } else if (!commandName && ALICE_ENABLED && shouldAliceReply(msg, chatId, senderJid, textMsg, xcasper.user?.id ? `${xcasper.user.id.split(':')[0].split('@')[0]}@s.whatsapp.net` : null)) {
+        } else if (!commandName && ALICE_ENABLED && shouldAliceReply(msg, chatId, senderJid, textMsg, [
+            xcasper.user?.id,
+            xcasper.user?.lid,
+            xcasper.user?.phoneNumber,
+            xcasper.user?.jid
+        ])) {
             await handleAliceInteraction(xcasper, msg, textMsg, senderJid);
         }
     } catch (error) {
