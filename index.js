@@ -2232,6 +2232,8 @@ async function handleConnectionCloseSilently(lastDisconnect, loginMode, phoneNum
     if (isConnected) return;
 
     const statusCode = lastDisconnect?.error?.output?.statusCode;
+    const disconnectMessage = lastDisconnect?.error?.message || 'unknown disconnect reason';
+    originalConsoleMethods.log(chalk.yellow(`[CONNECTION] closed status=${statusCode ?? 'unknown'} reason=${disconnectMessage}`));
 
     // 401 = WhatsApp explicitly logged us out — only time we wipe the session
     if (statusCode === 401) {
@@ -2251,6 +2253,7 @@ async function handleConnectionCloseSilently(lastDisconnect, loginMode, phoneNum
     reconnectAttempts++;
     // Cap at 30s after a few retries; reset counter once we reconnect successfully
     const retryDelay = Math.min(3000 * Math.pow(1.5, reconnectAttempts - 1), 30000);
+    originalConsoleMethods.log(chalk.yellow(`[CONNECTION] reconnect attempt=${reconnectAttempts} in=${retryDelay}ms`));
 
     reconnectTimer = setTimeout(() => {
         startBot(loginMode, phoneNumber);
@@ -2766,7 +2769,8 @@ async function startBot(loginMode = 'pair', loginData = null) {
         });
         
         return xcasper;
-    } catch (error) { 
+    } catch (error) {
+        originalConsoleMethods.error(chalk.red(`[STARTUP] failed: ${error?.stack || error?.message || error}`));
         setTimeout(async () => { await startBot(loginMode, loginData); }, 8000); 
     }
 }
@@ -3354,7 +3358,19 @@ async function handleIncomingMessage(xcasper, msg) {
         }
         // ────────────────────────────────────────────────────────────
 
-        if (!commandName) return;
+        if (!commandName) {
+            const aliceAccountJids = [
+                xcasper.user?.id,
+                xcasper.user?.lid,
+                xcasper.user?.phoneNumber,
+                xcasper.user?.jid
+            ];
+            if (isAliceActivationMessage(textMsg, msg)
+                || (ALICE_ENABLED && shouldAliceReply(msg, chatId, senderJid, textMsg, aliceAccountJids))) {
+                await handleAliceInteraction(xcasper, msg, textMsg, senderJid);
+            }
+            return;
+        }
         
         const rateLimitCheck = rateLimiter.canSendCommand(chatId, senderJid, commandName);
         if (!rateLimitCheck.allowed) {
