@@ -604,11 +604,18 @@ function isAliceAuthorizedUser(msg) {
     return false;
 }
 
+function isAliceNameMention(textMsg) {
+    if (!textMsg || !String(textMsg).trim()) return false;
+    return /(^|\s)(alice|alce|alicia|aliciah)(\s|$|[?.!])/i.test(String(textMsg).trim());
+}
+
 function isAliceActivationMessage(textMsg, msg) {
     if (!textMsg || !msg) return false;
     const trimmed = textMsg.trim();
     if (!trimmed) return false;
-    if (!/^(?:alice\s+)?(?:on|off|enable|disable|start|stop)$/i.test(trimmed)) return false;
+    const toggle = /^(?:on|off|enable|disable|start|stop)$/i.test(trimmed)
+        || /^(?:chatbot\s+)?(?:on|off|enable|disable|start|stop)$/i.test(trimmed);
+    if (!toggle) return false;
     return isAliceAuthorizedUser(msg);
 }
 
@@ -738,21 +745,31 @@ async function callAliceWithFailover(query, identityContext = '') {
     throw new Error(`All Alice providers failed. ${failures.join(' | ')}`);
 }
 
-async function getAliceGroupMemory(chatId) {
-    const memory = ALICE_GROUP_MEMORIES.get(chatId) || [];
-    return Array.isArray(memory) ? memory.slice(-20) : [];
+function getAliceGroupMemory(chatId) {
+    const raw = ALICE_GROUP_MEMORIES.get(chatId);
+    if (Array.isArray(raw)) return raw.slice(-20);
+    if (raw && typeof raw === 'object') {
+        const normalized = Array.isArray(raw.messages) ? raw.messages : Object.values(raw);
+        const safe = Array.isArray(normalized)
+            ? normalized.filter(item => item && typeof item === 'object')
+            : [];
+        ALICE_GROUP_MEMORIES.set(chatId, safe.slice(-20));
+        return safe.slice(-20);
+    }
+    return [];
 }
 
 function recordAliceGroupMemory(chatId, speakerName, text) {
     if (!chatId || !text || !String(text).trim()) return;
     const cleanText = String(text).trim();
     const current = getAliceGroupMemory(chatId);
-    current.push({
+    const entry = {
         name: speakerName || 'Someone',
         text: cleanText.slice(0, 400),
         at: new Date().toISOString()
-    });
-    ALICE_GROUP_MEMORIES.set(chatId, current.slice(-20));
+    };
+    const next = [...current, entry].slice(-20);
+    ALICE_GROUP_MEMORIES.set(chatId, next);
 }
 
 function buildAliceIdentityContext(profile, chatId, senderJid, msg) {
@@ -797,8 +814,18 @@ async function handleAliceInteraction(xcasper, msg, textMsg, senderJid) {
         }
     }
 
-    if (!ALICE_ENABLED && !authorized) return false;
-    if (!shouldAliceReply(msg, chatId, senderJid, textMsg, accountJids)) return false;
+    const isNameWake = isAliceNameMention(textMsg);
+    if (isNameWake && !ALICE_ENABLED) {
+        ALICE_ENABLED = true;
+        saveAliceState();
+    }
+    if (!ALICE_ENABLED && !authorized && !isNameWake) return false;
+    if (!ALICE_ENABLED && isNameWake && !isAliceActivationMessage(textMsg, msg)) {
+        ALICE_ENABLED = true;
+        saveAliceState();
+    }
+    if (ALICE_ENABLED && !shouldAliceReply(msg, chatId, senderJid, textMsg, accountJids) && !isNameWake) return false;
+    if (!ALICE_ENABLED && !authorized && !isNameWake) return false;
 
     const key = normalizeAliceUserKey(senderJid);
     const profile = getAliceProfile(key, msg.pushName || '');
@@ -3543,6 +3570,7 @@ async function handleIncomingMessage(xcasper, msg) {
                 xcasper.user?.jid
             ];
             if (isAliceActivationMessage(textMsg, msg)
+                || isAliceNameMention(textMsg)
                 || (ALICE_ENABLED && shouldAliceReply(msg, chatId, senderJid, textMsg, aliceAccountJids))) {
                 await handleAliceInteraction(xcasper, msg, textMsg, senderJid);
             }
@@ -3617,12 +3645,12 @@ async function handleIncomingMessage(xcasper, msg) {
             await handleAliceInteraction(xcasper, msg, textMsg, senderJid);
         } else if (!commandName && isAliceActivationMessage(textMsg, msg)) {
             await handleAliceInteraction(xcasper, msg, textMsg, senderJid);
-        } else if (!commandName && ALICE_ENABLED && shouldAliceReply(msg, chatId, senderJid, textMsg, [
+        } else if (!commandName && (isAliceNameMention(textMsg) || (ALICE_ENABLED && shouldAliceReply(msg, chatId, senderJid, textMsg, [
             xcasper.user?.id,
             xcasper.user?.lid,
             xcasper.user?.phoneNumber,
             xcasper.user?.jid
-        ])) {
+        ])))) {
             await handleAliceInteraction(xcasper, msg, textMsg, senderJid);
         }
     } catch (error) {
