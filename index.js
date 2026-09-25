@@ -637,6 +637,7 @@ function collectQuotedIdentityCandidates(msg, chatId) {
 function shouldAliceReply(msg, chatId, senderJid, textMsg, accountJids = []) {
     if (!ALICE_ENABLED || !msg || !chatId) return false;
     if (!textMsg || !textMsg.trim()) return false;
+    if (msg.key?.fromMe && /(?:^|\n)> Alice • ALICIAH AI\s*$/i.test(textMsg.trim())) return false;
     const quoted = getBaileysQuotedMessage(msg, chatId);
     const botJidSet = new Set((Array.isArray(accountJids) ? accountJids : [accountJids]).filter(Boolean));
     const isBotJid = (jid) => {
@@ -645,10 +646,16 @@ function shouldAliceReply(msg, chatId, senderJid, textMsg, accountJids = []) {
     };
     const mentionedBot = Array.isArray(msg.message?.extendedTextMessage?.contextInfo?.mentionedJid)
         && msg.message.extendedTextMessage.contextInfo.mentionedJid.some(isBotJid);
-    const quotedCandidates = collectQuotedIdentityCandidates(msg, chatId);
-    const quotedBot = quotedCandidates.some(isBotJid) || !!quoted && (
-        isBotJid(quoted.sender) || isBotJid(quoted.key?.participant) || isBotJid(quoted.key?.remoteJid)
-    );
+    const quotedBot = !!quoted && [
+        quoted.sender,
+        quoted.participant,
+        quoted.key?.participant,
+        quoted.key?.remoteJid,
+        quoted.contextInfo?.participant,
+        quoted.contextInfo?.participantAlt,
+        quoted.contextInfo?.remoteJid,
+        quoted.contextInfo?.remoteJidAlt
+    ].some(isBotJid);
     const mentionsAlice = /(^|\s)alice(\s|$|[?.!])/i.test(textMsg);
     return quotedBot || mentionedBot || mentionsAlice;
 }
