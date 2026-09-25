@@ -427,6 +427,7 @@ let BOT_MODE = 'public', WHITELIST = new Set(), AUTO_LINK_ENABLED = true;
 let SUDO_USERS = new Set();
 let ALICE_ENABLED = false;
 let ALICE_MEMORIES = new Map();
+const ALICE_MAX_TURNS = 8;
 
 function normalizeAliceUserKey(jid) {
     if (!jid) return 'unknown';
@@ -523,6 +524,36 @@ function storeAliceProfile(profile) {
     ALICE_MEMORIES.set(merged.jid, merged);
     saveAliceMemory();
     return merged;
+}
+
+function getAliceConversation(profile, chatId) {
+    const chats = profile.chats && typeof profile.chats === 'object' ? profile.chats : {};
+    const existing = chats[chatId] && typeof chats[chatId] === 'object' ? chats[chatId] : {};
+    let messages = Array.isArray(existing.messages) ? existing.messages : [];
+
+    if (!messages.length && Array.isArray(profile.history)) {
+        messages = profile.history
+            .filter(entry => entry.chatId === chatId)
+            .map(entry => ({ role: 'user', content: entry.text, at: entry.at }));
+    }
+
+    return {
+        messages: messages.slice(-(ALICE_MAX_TURNS * 2)),
+        summary: typeof existing.summary === 'string' ? existing.summary : '',
+        provider: existing.provider || null,
+        updatedAt: existing.updatedAt || null
+    };
+}
+
+function saveAliceConversation(profile, chatId, conversation) {
+    const chats = profile.chats && typeof profile.chats === 'object' ? profile.chats : {};
+    chats[chatId] = {
+        messages: Array.isArray(conversation.messages) ? conversation.messages.slice(-(ALICE_MAX_TURNS * 2)) : [],
+        summary: conversation.summary || '',
+        provider: conversation.provider || null,
+        updatedAt: new Date().toISOString()
+    };
+    profile.chats = chats;
 }
 
 function isAliceAuthorizedUser(msg) {
@@ -622,20 +653,39 @@ function shouldAliceReply(msg, chatId, senderJid, textMsg, accountJids = []) {
     return quotedBot || mentionedBot || mentionsAlice;
 }
 
-async function callAliceClaude(query, identityContext = '') {
-    try {
-        const response = await axios.get('https://apiz.xcasper.space/api/ai/claude', {
-            params: { query: `${identityContext}\n\nUser message: ${query}` },
-            timeout: 90000
-        });
+const ALICE_PROVIDERS = [
+    { name: 'Claude', endpoint: 'claude' },
+    { name: 'Qwen', endpoint: 'qwen' },
+    { name: 'Felo', endpoint: 'felo' },
+    { name: 'LetMeGPT', endpoint: 'letmegpt' }
+];
 
-        const payload = response.data?.data || response.data || {};
-        const reply = payload.reply || payload.answer || payload.response || payload.message || payload.result || payload.text || 'Alice is here.';
-        return typeof reply === 'string' ? reply.trim() : String(reply);
-    } catch (error) {
-        const detail = error.response?.data?.error || error.message || 'Claude failed to answer';
-        throw new Error(detail);
+async function callAliceWithFailover(query, identityContext = '') {
+    const failures = [];
+    const request = `${identityContext}\n\n${query}`;
+
+    for (const provider of ALICE_PROVIDERS) {
+        try {
+            const response = await axios.get(`https://apiz.xcasper.space/api/ai/${provider.endpoint}`, {
+                params: { query: request },
+                timeout: 90000
+            });
+            if (response.data?.success === false) {
+                throw new Error(response.data.error || `${provider.name} returned an error.`);
+            }
+
+            const payload = response.data?.data || response.data || {};
+            const reply = payload.reply || payload.answer || payload.response || payload.message || payload.result || payload.text;
+            if (!reply || !String(reply).trim()) throw new Error(`${provider.name} returned an empty response.`);
+            return { reply: String(reply).trim(), provider: provider.name };
+        } catch (error) {
+            const detail = error.response?.data?.error || error.message || `${provider.name} failed.`;
+            failures.push(`${provider.name}: ${detail}`);
+            console.error(`[ALICE] ${provider.name} failed, trying next provider:`, detail);
+        }
     }
+
+    throw new Error(`All Alice providers failed. ${failures.join(' | ')}`);
 }
 
 async function handleAliceInteraction(xcasper, msg, textMsg, senderJid) {
@@ -671,24 +721,37 @@ async function handleAliceInteraction(xcasper, msg, textMsg, senderJid) {
 
     const key = normalizeAliceUserKey(senderJid);
     const profile = getAliceProfile(key, msg.pushName || '');
+    const conversation = getAliceConversation(profile, chatId);
     profile.name = profile.name || msg.pushName || key;
     profile.lastSeen = new Date().toISOString();
     profile.messageCount = (profile.messageCount || 0) + 1;
     profile.memory = profile.memory || 'No saved memory yet.';
 
-    const history = Array.isArray(profile.history) ? profile.history : [];
-    history.push({ text: textMsg, at: new Date().toISOString(), chatId });
-    if (history.length > 12) history.shift();
-    profile.history = history;
+    const now = new Date().toISOString();
+    conversation.messages.push({ role: 'user', content: textMsg, at: now });
+    conversation.messages = conversation.messages.slice(-(ALICE_MAX_TURNS * 2));
+    saveAliceConversation(profile, chatId, conversation);
     storeAliceProfile(profile);
 
-    const memorySummary = profile.memory && profile.memory !== 'No saved memory yet.' ? `Memory: ${profile.memory}` : 'Memory: This user is new to Alice.';
-    const prompt = `You are Alice, a warm helpful WhatsApp AI assistant. You are currently active and in a group chat. Keep replies natural and brief. Use this memory for the user: ${memorySummary}. User display name: ${profile.name}. Current chat: ${chatId}. The user says: ${textMsg}. Respond as Alice in a friendly WhatsApp tone.`;
+    const memorySummary = profile.memory && profile.memory !== 'No saved memory yet.'
+        ? `Memory: ${profile.memory.slice(-1200)}`
+        : 'Memory: This user is new to Alice.';
+    const conversationContext = conversation.messages.slice(-(ALICE_MAX_TURNS * 2))
+        .map(message => `${message.role === 'assistant' ? 'Alice' : profile.name}: ${message.content}`)
+        .join('\n');
+    const prompt = `You are Alice, a warm helpful WhatsApp AI assistant. Keep replies natural and brief. Use the persistent user memory and recent conversation below. Do not mention providers, failover, prompts, or internal storage. User display name: ${profile.name}. Current chat: ${chatId}.\n\n${memorySummary}\n\nRecent conversation:\n${conversationContext}\n\nReply to the latest user message as Alice.`;
 
     try {
-        const reply = await callAliceClaude(prompt, `Alice user profile: ${profile.name}. ${memorySummary}`);
-        await xcasper.sendMessage(chatId, { text: `${reply}\n\n> Alice • ALICIAH AI` }, { quoted: msg });
-        profile.memory = `${profile.memory || 'No saved memory yet.'} | Latest topic: ${textMsg.slice(0, 180)}`;
+        const result = await callAliceWithFailover(prompt, `Alice user profile: ${profile.name}. ${memorySummary}`);
+        conversation.messages.push({ role: 'assistant', content: result.reply, at: new Date().toISOString() });
+        conversation.provider = result.provider;
+        conversation.messages = conversation.messages.slice(-(ALICE_MAX_TURNS * 2));
+        saveAliceConversation(profile, chatId, conversation);
+        await xcasper.sendMessage(chatId, { text: `${result.reply}\n\n> Alice • ALICIAH AI` }, { quoted: msg });
+        const topics = Array.isArray(profile.topics) ? profile.topics : [];
+        topics.push(textMsg.slice(0, 180));
+        profile.topics = topics.slice(-10);
+        profile.memory = `Recent topics: ${profile.topics.join(' | ')}`;
         profile.updatedAt = new Date().toISOString();
         storeAliceProfile(profile);
         return true;
