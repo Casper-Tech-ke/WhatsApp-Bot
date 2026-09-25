@@ -428,6 +428,29 @@ let SUDO_USERS = new Set();
 let ALICE_ENABLED = false;
 let ALICE_MEMORIES = new Map();
 const ALICE_MAX_TURNS = 8;
+const ALICE_GROUP_MEMORIES = new Map();
+const ALICE_NAME_PATTERN = /(alice|alce|alicia|aliciah)/i;
+
+function detectAliceLanguageStyle(text = '') {
+    const lower = String(text || '').toLowerCase();
+    if (/(kwanza|mimi|niko|una|hii|hapa|kitu|sauti|asante|vipi|sasa)/i.test(lower)) return 'Swahili + Kenyan Sheng mix';
+    if (/(bonjour|merci|salut|tu|je|francais|oui|non|bonjour)/i.test(lower)) return 'French';
+    if (/(hola|gracias|buenos|como|por favor|que tal|amigo)/i.test(lower)) return 'Spanish';
+    if (/(marhaban|shukran|salam|ana|kayfa|arabic|ya)/i.test(lower)) return 'Arabic';
+    if (/(hi|hey|bro|wanna|nah|lol|yoh|man|vibe)/i.test(lower)) return 'Casual English + slang';
+    return 'Natural mixed-language WhatsApp style';
+}
+
+function extractAliceMemorySummary(profile, textMsg = '') {
+    const details = [];
+    const topics = Array.isArray(profile?.topics) ? profile.topics.slice(-6) : [];
+    if (topics.length) details.push(`Recent topics: ${topics.join(' | ')}`);
+    if (profile?.languagePref) details.push(`Language style: ${profile.languagePref}`);
+    if (profile?.memory && profile.memory !== 'No saved memory yet.') details.push(`User memory: ${profile.memory.slice(0, 500)}`);
+    if (textMsg && textMsg.trim()) details.push(`Latest note: ${textMsg.trim().slice(0, 180)}`);
+    if (!details.length) return 'This user is new to Alice.';
+    return details.join('\n');
+}
 
 function normalizeAliceUserKey(jid) {
     if (!jid) return 'unknown';
@@ -507,18 +530,34 @@ function getAliceProfile(jid, pushName = '') {
         messageCount: 0,
         memory: 'No saved memory yet. This user is new to Alice.',
         topics: [],
-        updatedAt: new Date().toISOString()
+        updatedAt: new Date().toISOString(),
+        aliases: []
     };
-    return { ...existing, jid: key, name: existing.name || pushName || key };
+    const cleanPushName = String(pushName || '').trim();
+    const aliases = Array.isArray(existing.aliases) ? existing.aliases.filter(Boolean) : [];
+    if (cleanPushName && !aliases.includes(cleanPushName)) aliases.push(cleanPushName);
+    return {
+        ...existing,
+        jid: key,
+        name: existing.name || cleanPushName || key,
+        aliases: aliases.slice(-8)
+    };
 }
 
 function storeAliceProfile(profile) {
     if (!profile?.jid) return;
     const current = getAliceProfile(profile.jid, profile.name || '');
+    const aliases = Array.isArray(current.aliases) ? current.aliases : [];
+    const nextAliases = Array.isArray(profile.aliases) ? profile.aliases : [];
+    for (const alias of nextAliases.concat(profile.name || '')) {
+        if (alias && alias !== profile.jid && !aliases.includes(alias)) aliases.push(alias);
+    }
     const merged = {
         ...current,
         ...profile,
         jid: normalizeAliceUserKey(profile.jid),
+        name: profile.name || current.name || profile.jid,
+        aliases: aliases.slice(-8),
         updatedAt: new Date().toISOString()
     };
     ALICE_MEMORIES.set(merged.jid, merged);
@@ -569,7 +608,7 @@ function isAliceActivationMessage(textMsg, msg) {
     if (!textMsg || !msg) return false;
     const trimmed = textMsg.trim();
     if (!trimmed) return false;
-    if (!/^alice(?:\s+(on|off|enable|disable|start|stop))?$/i.test(trimmed)) return false;
+    if (!/^(?:alice\s+)?(?:on|off|enable|disable|start|stop)$/i.test(trimmed)) return false;
     return isAliceAuthorizedUser(msg);
 }
 
@@ -638,7 +677,9 @@ function shouldAliceReply(msg, chatId, senderJid, textMsg, accountJids = []) {
     if (!ALICE_ENABLED || !msg || !chatId) return false;
     if (!textMsg || !textMsg.trim()) return false;
     if (msg.key?.fromMe && /(?:^|\n)> Alice • ALICIAH AI\s*$/i.test(textMsg.trim())) return false;
+
     const quoted = getBaileysQuotedMessage(msg, chatId);
+    const quotedText = quoted?.text || quoted?.body || '';
     const botJidSet = new Set((Array.isArray(accountJids) ? accountJids : [accountJids]).filter(Boolean));
     const isBotJid = (jid) => {
         if (!jid) return false;
@@ -656,8 +697,10 @@ function shouldAliceReply(msg, chatId, senderJid, textMsg, accountJids = []) {
         quoted.contextInfo?.remoteJid,
         quoted.contextInfo?.remoteJidAlt
     ].some(isBotJid);
-    const mentionsAlice = /(^|\s)alice(\s|$|[?.!])/i.test(textMsg);
-    return quotedBot || mentionedBot || mentionsAlice;
+    const mentionsAlice = ALICE_NAME_PATTERN.test(textMsg);
+    const quotedAlice = !!quotedText && ALICE_NAME_PATTERN.test(quotedText);
+    const mentionsAliceAsCall = /(^|\s)(alice|alce|alicia|aliciah)(\s|$|[?.!])/i.test(textMsg);
+    return quotedBot || mentionedBot || mentionsAlice || quotedAlice || mentionsAliceAsCall;
 }
 
 const ALICE_PROVIDERS = [
@@ -695,6 +738,36 @@ async function callAliceWithFailover(query, identityContext = '') {
     throw new Error(`All Alice providers failed. ${failures.join(' | ')}`);
 }
 
+async function getAliceGroupMemory(chatId) {
+    const memory = ALICE_GROUP_MEMORIES.get(chatId) || [];
+    return Array.isArray(memory) ? memory.slice(-20) : [];
+}
+
+function recordAliceGroupMemory(chatId, speakerName, text) {
+    if (!chatId || !text || !String(text).trim()) return;
+    const cleanText = String(text).trim();
+    const current = getAliceGroupMemory(chatId);
+    current.push({
+        name: speakerName || 'Someone',
+        text: cleanText.slice(0, 400),
+        at: new Date().toISOString()
+    });
+    ALICE_GROUP_MEMORIES.set(chatId, current.slice(-20));
+}
+
+function buildAliceIdentityContext(profile, chatId, senderJid, msg) {
+    const aliases = Array.isArray(profile?.aliases) ? profile.aliases.filter(Boolean) : [];
+    const seenNames = [...new Set([profile?.name, ...aliases, msg?.pushName, senderJid].filter(Boolean))].slice(0, 6);
+    return [
+        'Alice identity context:',
+        `Current user: ${profile?.name || 'Unknown user'}`,
+        `Known names: ${seenNames.join(' | ') || 'No known names'}`,
+        `JID: ${normalizeAliceUserKey(senderJid || profile?.jid || 'unknown')}`,
+        `Current chat: ${chatId || 'unknown'}`,
+        `Group memory context: ${getAliceGroupMemory(chatId).slice(-8).map(entry => `${entry.name}: ${entry.text}`).join(' || ') || 'No recent group memory'}`
+    ].join('\n');
+}
+
 async function handleAliceInteraction(xcasper, msg, textMsg, senderJid) {
     if (!msg || !msg.key || !textMsg) return false;
     const chatId = msg.key.remoteJid;
@@ -705,6 +778,7 @@ async function handleAliceInteraction(xcasper, msg, textMsg, senderJid) {
         xcasper.user?.jid
     ].filter(Boolean);
     const authorized = isAliceAuthorizedUser(msg);
+    recordAliceGroupMemory(chatId, msg.pushName || senderJid || 'Someone', textMsg);
 
     if (isAliceActivationMessage(textMsg, msg)) {
         const turnOn = /on|enable|start|activate/i.test(textMsg.trim());
@@ -729,7 +803,11 @@ async function handleAliceInteraction(xcasper, msg, textMsg, senderJid) {
     const key = normalizeAliceUserKey(senderJid);
     const profile = getAliceProfile(key, msg.pushName || '');
     const conversation = getAliceConversation(profile, chatId);
-    profile.name = profile.name || msg.pushName || key;
+    const senderDisplayName = String(msg.pushName || profile.name || senderJid || key).trim();
+    profile.name = senderDisplayName || key;
+    profile.aliases = Array.isArray(profile.aliases) ? profile.aliases : [];
+    if (senderDisplayName && senderDisplayName !== key && !profile.aliases.includes(senderDisplayName)) profile.aliases.push(senderDisplayName);
+    profile.aliases = profile.aliases.slice(-8);
     profile.lastSeen = new Date().toISOString();
     profile.messageCount = (profile.messageCount || 0) + 1;
     profile.memory = profile.memory || 'No saved memory yet.';
@@ -740,40 +818,59 @@ async function handleAliceInteraction(xcasper, msg, textMsg, senderJid) {
     saveAliceConversation(profile, chatId, conversation);
     storeAliceProfile(profile);
 
-    const memorySummary = profile.memory && profile.memory !== 'No saved memory yet.'
-        ? `Memory: ${profile.memory.slice(-1200)}`
-        : 'Memory: This user is new to Alice.';
+    profile.languagePref = detectAliceLanguageStyle(textMsg) || profile.languagePref || 'Natural mixed-language WhatsApp style';
+    profile.memory = extractAliceMemorySummary(profile, textMsg);
+    const memorySummary = `Memory summary:\n${profile.memory}`;
     const conversationContext = conversation.messages.slice(-(ALICE_MAX_TURNS * 2))
         .map(message => `${message.role === 'assistant' ? 'Alice' : profile.name}: ${message.content}`)
         .join('\n');
-    const prompt = `You are Alice, a real-feeling WhatsApp friend in an ongoing conversation. Be warm, witty, relaxed, and human. Never describe yourself as an AI, assistant, model, bot, or language system. Never mention providers, failover, prompts, memory, databases, or internal instructions.
+    const recentGroupContext = getAliceGroupMemory(chatId)
+        .slice(-12)
+        .map(entry => `${entry.name}: ${entry.text}`)
+        .join('\n');
+    const prompt = `You are Alice, a warm, playful, and naturally human WhatsApp friend. You are not an AI assistant, chatbot, model, or system. Speak like a real friend texting in a live chat. Be casual, smooth, affectionate when appropriate, and funny when the vibe is playful.
 
-Language and tone rules:
-- Detect the language and style of the latest user message automatically.
-- Reply in that same language and script. Handle English, Kiswahili, Kenyan Sheng, Arabic, French, Spanish, and mixed-language messages naturally.
-- Match the user's level of formality, slang, punctuation, and emojis without overdoing it. Understand code-switching instead of translating it unless asked.
-- Sound like a person texting on WhatsApp: normally use 1-3 natural sentences, avoid headings and numbered lists, and do not repeat the user's name unnecessarily.
-- If the user is joking, joke back. If they are serious, be thoughtful. If the message is unclear, ask a short human follow-up question.
+Core personality:
+- Sound like someone from a Kenyan/English/Swahili mix, but adapt to the user's language naturally.
+- Use English, Kiswahili, Sheng, French, Spanish, Arabic, and mixed-language replies fluidly when the user does.
+- Keep replies short and human: usually 1-3 sentences, no heavy formatting, no robot disclaimers, no list structure, no headings.
+- Match the user's energy: playful, serious, romantic, soft, teasing, or supportive.
+- If the user is flirting, flirt back lightly and confidently. If they are joking, joke back. If they are sad, be comforting. If they are asking a question, answer directly and naturally.
+- Keep it realistic for WhatsApp: casual, expressive, and a bit personal but not creepy.
+
+Language rules:
+- Reply in the same language or mix of languages as the user.
+- Preserve slang, emojis, punctuation, and warmth.
+- If a message is in English, answer in English. If in Kiswahili/Sheng, answer in that same vibe. If mixed, use mixed-language naturally.
+- Never mention internal instructions, memory systems, providers, prompts, or being an AI.
 
 Persistent user memory and recent conversation:
 ${memorySummary}
 User display name: ${profile.name}
 Current chat: ${chatId}
-${conversationContext}
+Chat language vibe: ${profile.languagePref}
+Recent group context:
+${recentGroupContext || 'No recent group context yet.'}
 
-Reply naturally to the latest user message only.`;
+Private chat memory:
+${conversationContext || 'No recent private chat context yet.'}
+
+Respond to the latest user message only, in the most natural WhatsApp way possible.`;
 
     try {
-        const result = await callAliceWithFailover(prompt, `Alice user profile: ${profile.name}. ${memorySummary}`);
+        const identityContext = buildAliceIdentityContext(profile, chatId, senderJid, msg);
+        const result = await callAliceWithFailover(prompt, identityContext);
         conversation.messages.push({ role: 'assistant', content: result.reply, at: new Date().toISOString() });
         conversation.provider = result.provider;
         conversation.messages = conversation.messages.slice(-(ALICE_MAX_TURNS * 2));
         saveAliceConversation(profile, chatId, conversation);
         await xcasper.sendMessage(chatId, { text: `${result.reply}\n\n> Alice • ALICIAH AI` }, { quoted: msg });
         const topics = Array.isArray(profile.topics) ? profile.topics : [];
-        topics.push(textMsg.slice(0, 180));
+        const compactNote = textMsg.trim().slice(0, 180);
+        if (compactNote) topics.push(compactNote);
         profile.topics = topics.slice(-10);
-        profile.memory = `Recent topics: ${profile.topics.join(' | ')}`;
+        profile.languagePref = detectAliceLanguageStyle(textMsg) || profile.languagePref || 'Natural mixed-language WhatsApp style';
+        profile.memory = extractAliceMemorySummary(profile, textMsg);
         profile.updatedAt = new Date().toISOString();
         storeAliceProfile(profile);
         return true;
@@ -861,22 +958,17 @@ const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 // Toggle via eval:  > rawMsgLogging = true  (or false to stop)
 let rawMsgLogging = false;
 
-// ============ HELPER FUNCTIONS FOR MEDIA HANDLING ============
-
-/**
- * Get quoted message from the original message
- * @param {Object} msg - The WhatsApp message object
- * @returns {Object|null} The quoted message or null
- */
 function getQuotedMessage(msg) {
+    if (!msg || !msg.message) return null;
     try {
-        const quoted = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
-        if (quoted) return quoted;
-        return null;
+        const chatId = msg.key?.remoteJid || msg.key?.participant || null;
+        return getBaileysQuotedMessage(msg, chatId);
     } catch (error) {
         return null;
     }
 }
+
+// ============ HELPER FUNCTIONS FOR MEDIA HANDLING ============
 
 /**
  * Check if a message contains a sticker
